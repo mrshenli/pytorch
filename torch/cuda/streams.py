@@ -2,10 +2,10 @@ import ctypes
 import torch
 from . import cudart, check_error, cudaStatus
 from ._utils import _get_device_index
-from torch._C import _add_docstr
+from torch._C import _CudaStreamBase, _add_docstr
 
 
-class Stream(torch._C._CudaStreamBase):
+class Stream(_CudaStreamBase):
     r"""Wrapper around a CUDA stream.
 
     A CUDA stream is a linear sequence of execution that belongs to a specific
@@ -70,7 +70,7 @@ class Stream(torch._C._CudaStreamBase):
         check_error(cudart().cudaEventRecord(event, self))
         return event
 
-    query = _add_docstr(torch._C._CudaStreamBase.query, r"""
+    query = _add_docstr(_CudaStreamBase.query, r"""
     Checks if all the work submitted has been completed.
 
     Returns:
