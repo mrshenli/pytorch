@@ -6,7 +6,9 @@ namespace c10d {
 
 class PrefixStore : public Store {
  public:
-  explicit PrefixStore(const std::string& prefix, Store& store);
+  explicit PrefixStore(
+      const std::string& prefix,
+      Store& store);
 
   virtual ~PrefixStore(){};
 
