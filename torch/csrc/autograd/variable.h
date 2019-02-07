@@ -514,6 +514,7 @@ inline void Variable::set_data(Tensor new_data) const {
 
 inline void Variable::set_gradient_edge(Edge edge) noexcept {
   get()->grad_fn_ = std::move(edge.function);
+  std::cout << "===== setting grad_fn_ " << get()->grad_fn_.use_count();
   get()->output_nr_ = edge.input_nr;
 }
 

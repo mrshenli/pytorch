@@ -76,6 +76,7 @@ tensor_list2d broadcast_coalesced(TensorList tensors, IntList devices, size_t bu
   buffer_size = std::min(torch::cuda::nccl::get_max_count(), buffer_size);
 #endif
 
+  std::cout << "===== calling broadcast_coalesced\n";
   tensor_list2d outputs(devices.size());
   outputs[0] = tensors.vec();
   for (auto & o : outputs)

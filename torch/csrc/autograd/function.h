@@ -33,8 +33,8 @@ using edge_list = std::vector<Edge>;
 using saved_variable_list = std::vector<SavedVariable>;
 using IndexRange = std::pair<size_t, size_t>;
 
-// Custom deleter to prevent stack overflows.
-void deleteFunction(Function* function);
+TORCH_API extern size_t deleteFunctionMaxRecursionDepth;
+
 
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ///                               Function
@@ -98,6 +98,7 @@ struct TORCH_API Function : std::enable_shared_from_this<Function> {
     if (AnomalyMode::is_enabled()) {
       metadata()->store_stack();
     }
+    std::cout << "====== creating function " << name() << ", " << this << std::endl;
   }
 
   explicit Function(edge_list&& next_edges = edge_list())
@@ -178,6 +179,12 @@ struct TORCH_API Function : std::enable_shared_from_this<Function> {
 
   void set_next_edges(edge_list&& next_edges) {
     next_edges_ = std::move(next_edges);
+
+    for (auto & e: next_edges_) {
+      if (e.function && e.function->name().compare("BroadcastBackward") == 0) {
+        std::cout << "!!!! adding BroadcastBackward " << e.function << " as dependency by " << name() << ", " << this << ", ref count is " << e.function.use_count() << std::endl;
+      }
+    }
   }
 
   const edge_list& next_edges() const noexcept {
@@ -303,6 +310,16 @@ struct TORCH_API Function : std::enable_shared_from_this<Function> {
     return false;
   }
 
+  /// Returns `Variable`s saved by this `Function`.
+  /// This let's the JIT find inputs to apply that are not present explicitly
+  /// in arguments. Required only for functions that are not traceable, don't
+  /// pass state to backward transparently, and are not backwards closures of
+  /// functions that don't pass the state transparently. Which means that
+  /// hopefully they will hardly ever need to be implemented :)
+  virtual std::unique_ptr<saved_variable_list> saved_variables() {
+    return nullptr;
+  }
+
   static uint64_t peek_at_next_sequence_nr();
 
  protected:
@@ -346,6 +363,10 @@ struct MakeNextFunctionList : IterArgs<MakeNextFunctionList> {
   void operator()(const Variable& variable) {
     if (variable.defined()) {
       next_edges.push_back(variable.gradient_edge());
+      const auto & e = variable.gradient_edge();
+      if (e.function && e.function->name().compare("BroadcastBackward") == 0) {
+        std::cout << "gradient edge to ====> BroadcastBackward " << e.function << ", ref count is " << e.function.use_count() << std::endl;
+      }
     } else {
       next_edges.emplace_back();
     }
@@ -369,6 +390,7 @@ inline void create_gradient_edge(
     std::shared_ptr<Function> function) {
   // Copy before move.
   const auto input_nr = function->add_input_metadata(variable);
+  std::cout << "===== create_gradient_edge calling set_gradient_edge\n";
   variable.set_gradient_edge({std::move(function), input_nr});
 }
 

@@ -55,4 +55,76 @@ void check_input_variables(const char* name, const variable_list& inputs, int ar
     }
   }
 }
+
+
+static void gatherFunctions(
+    Function* func,
+    std::vector<std::shared_ptr<Function>>& stack) {
+  func->release_variables();
+
+
+
+
+  for (auto& edge : func->next_edges()) {
+    if (edge.function && edge.function->name().compare("BroadcastBackward") == 0) {
+      std::cout << ">>>> use count is " << edge.function.use_count() << std::endl;
+    }
+
+
+    if (edge.function.use_count() == 1) {
+      auto fn = dynamic_cast<PyFunction*>(edge.function.get());
+      if ((fn && Py_REFCNT(fn->obj) == 1) || !fn) {
+        std::cout << "---- gather " << edge.function -> name() << " by " << func->name() << ", " << edge.function.use_count() << ", " << edge.function << std::endl;
+        stack.emplace_back(std::move(edge.function));
+      }
+    } else {
+      edge.function.reset();
+    }
+  }
+}
+
+/*
+  * Fix for #5534: prevent stack overflow on deletion of deep computation graph
+  *
+  * Sometimes one can end up with a very big computation graph of Functions
+  * and Edges. Each std::shared_ptr<Function> contains a list of Edge, and
+  * each Edge contains a std::shared_ptr<Function>. Deleting a
+  * std::shared_ptr<Function> can trigger the recursive deletion of other
+  * std::shared_ptr<Function>'s: this can stack overflow if the graph
+  * is deep enough. Here is an example of such a graph:
+  *
+  * shared_ptr<Function> -> Edge -> shared_ptr<Function> -> Edge -> ... -> shared_ptr<Function>
+  *
+  * The solution here is to detect when we are decrementing away the last
+  * reference to a Function, and when doing so to buffer up the Function's
+  * that will be recursively decremented.  We can then decrement (and free)
+  * the original Function without causing a recursive cascade, before
+  * draining the buffer applying the same behavior.  This is, in effect,
+  * converting recursion to a loop, using a heap buffer in place of the
+  * recursive call stack.
+  */
+void deleteFunction(Function* function) {
+  std::string name(function -> name());
+  std::cout << "+++++ start " << name << "++++++\n";
+  // To avoid stack overflow on large computational graphs,
+  // we need to track reference decrementing and freeing
+  // on the heap.
+  function->release_variables();
+  std::vector<std::shared_ptr<Function>> stack;
+  gatherFunctions(function, stack);
+  std::cout << "=== deleted function " << name << ", " << function << std::endl;
+
+  delete function;
+
+  while (!stack.empty()) {
+    auto func = std::move(stack.back());
+    stack.pop_back();
+    gatherFunctions(func.get(), stack);
+    // Reference count is decremented on the loop backedge.
+  }
+
+  std::cout << "+++++ end " << name << "++++++\n";
+
+}
+
 }} // namespace torch::autograd

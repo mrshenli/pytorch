@@ -1,9 +1,12 @@
 #pragma once
 
 #include "torch/csrc/WindowsTorchApiMacro.h"
+#include <torch/csrc/autograd/python_function.h>
+#include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/autograd/function.h>
 #include <torch/csrc/autograd/variable.h>
 #include <torch/csrc/utils/variadic.h>
+#include <torch/csrc/python_headers.h>
 
 #include <ATen/ATen.h>
 
@@ -12,6 +15,9 @@
 #include <vector>
 
 namespace torch { namespace autograd {
+
+// Custom deleter to prevent stack overflows.
+void deleteFunction(Function* function);
 
 using function_constructor = std::function<std::shared_ptr<Function>(edge_list&&)>;
 

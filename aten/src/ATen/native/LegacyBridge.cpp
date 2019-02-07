@@ -116,9 +116,12 @@ Tensor addmm(const Tensor& self, const Tensor& mat1, const Tensor& mat2, Scalar 
   auto mat1_sparse = mat1.is_sparse();
   if (mat1_sparse) {
     Tensor b_self;
+    std::cout << "===== is sparse \n";
+
     std::tie(b_self) = expand_size(self, {mat1.size(0), mat2.size(1)}, "addmm");
     return s_native_addmm(b_self, mat1, mat2, beta, alpha);
   } else {
+    std::cout << "===== is dense \n";
     return th_addmm(self, mat1, mat2, beta, alpha);
   }
 }

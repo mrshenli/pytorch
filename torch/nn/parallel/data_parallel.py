@@ -122,8 +122,14 @@ class DataParallel(Module):
         inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
         if len(self.device_ids) == 1:
             return self.module(*inputs[0], **kwargs[0])
+        print ("----  replicate")
         replicas = self.replicate(self.module, self.device_ids[:len(inputs)])
+        print ("----  parallel_apply")
         outputs = self.parallel_apply(replicas, inputs, kwargs)
+        print ("---- check backward")
+        for output in outputs:
+            output.mean().backward()
+        print ("----  gather")
         return self.gather(outputs, self.output_device)
 
     def replicate(self, module, device_ids):

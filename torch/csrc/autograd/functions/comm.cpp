@@ -39,6 +39,7 @@ variable_list Scatter::apply(variable_list&& inputs) {
   if (compute_requires_grad(input)) {
     grad_fn =
         std::make_shared<Gather>(/*destination_device=*/input.device(), dim_);
+    std::cout << "++++ calling set_next_edges in Scatter\n";
     grad_fn->set_next_edges(collect_next_edges(input));
   }
 
@@ -116,6 +117,7 @@ variable_list Gather::apply(variable_list&& inputs) {
         dim_,
         /*streams=*/at::nullopt,
         /*unsqueeze_scalars=*/unsqueeze_scalars);
+    std::cout << "++++ calling set_next_edges in Gather\n";
     grad_fn->set_next_edges(collect_next_edges(inputs));
   }
 

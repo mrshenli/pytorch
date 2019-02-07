@@ -89,6 +89,7 @@ static void _maybe_reinitialize_engine_after_fork() {
 PyObject *THPEngine_run_backward(THPEngine *self, PyObject *args, PyObject *kwargs)
 {
   HANDLE_TH_ERRORS
+  std::cout << "======== run_backward ======== \n";
   _maybe_reinitialize_engine_after_fork();
   PyObject *tensors = nullptr;
   PyObject *grad_tensors = nullptr;
@@ -166,7 +167,9 @@ PyObject *THPEngine_run_backward(THPEngine *self, PyObject *args, PyObject *kwar
   variable_list outputs;
   {
     AutoNoGIL no_gil;
+    std::cout << "-------------------- start --------------------\n";
     outputs = engine.execute(roots, grads, keep_graph, create_graph, output_edges);
+    std::cout << "--------------------- end ---------------------\n";
   }
 
   if (inputs != nullptr) {

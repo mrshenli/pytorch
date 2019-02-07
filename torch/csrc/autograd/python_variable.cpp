@@ -55,6 +55,9 @@ static PyObject* THPVariable_NewWithVar(PyTypeObject* type, Variable var)
       // of the THPFunction is at least the number of referring THPVariables.
       const auto output_nr = v->cdata.output_nr();
       auto grad_fn = THPFunction_asFunction((THPFunction*)fn->obj);
+      if (grad_fn->name().compare("BroadcastBackward") == 0) {
+        std::cout << "==== creating new python var 00000000 by " << v->cdata.name() << ", ref count " << grad_fn.use_count() << std::endl;
+      }
       v->cdata.set_gradient_edge({std::move(grad_fn), output_nr});
     }
   }
@@ -239,7 +242,7 @@ int THPVariable_set_grad(THPVariable *self, PyObject *py_grad)
   auto& grad = ((THPVariable*)py_grad)->cdata;
   bool gradIsSparse = false;
   auto backend = var.is_cuda() ? Backend::SparseCUDA : Backend::SparseCPU;
-  auto typeOpt = at::globalContext().getNonVariableTypeOpt(backend, var.type().scalarType());  
+  auto typeOpt = at::globalContext().getNonVariableTypeOpt(backend, var.type().scalarType());
   if (typeOpt) {
        auto& sparseType = at::globalContext().getNonVariableType(backend, var.type().scalarType());
        gradIsSparse = grad.type() == sparseType;

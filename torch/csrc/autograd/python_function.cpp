@@ -416,8 +416,15 @@ static void _wrap_outputs(THPFunction *self,
       // An input has been returned, but it wasn't modified. Return it as a view
       // so that we can attach a new grad_fn to the Variable.
       var = var.view_as(var);
+      if (cdata->name().compare("BroadcastBackward") == 0) {
+        std::cout << "==== creating new python var 222222 by " << var.name() << ", ref count is " << cdata.use_count() << std::endl;
+      }
       var.set_gradient_edge({cdata, output_nr});
     } else if (cdata) {
+      if (cdata->name().compare("BroadcastBackward") == 0) {
+        std::cout << "==== creating new python var 333333 " << var.name() << ", ref count is "  << cdata.use_count() << std::endl;
+      }
+
       var.set_gradient_edge({cdata, output_nr});
     }
   };

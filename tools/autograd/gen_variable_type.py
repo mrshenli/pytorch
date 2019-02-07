@@ -104,7 +104,17 @@ if (compute_requires_grad( ${args_with_derivatives} )) {
 
 ASSIGN_GRAD_FN = CodeTemplate("""\
 grad_fn = std::shared_ptr<${op}>(new ${op}(${op_ctor}), deleteFunction);
+for (auto & e : collect_next_edges( ${args_with_derivatives} )) {
+  if (e.function && e.function->name().compare("BroadcastBackward") == 0) {
+    std::cout << "before next_edge ->  BroadcastBackward " << e.function << ", ref count is, " << e.function.use_count() << std::endl;
+  }
+}
 grad_fn->set_next_edges(collect_next_edges( ${args_with_derivatives} ));
+for (auto & e : collect_next_edges( ${args_with_derivatives} )) {
+  if (e.function && e.function->name().compare("BroadcastBackward") == 0) {
+    std::cout << "after next_edge ->  BroadcastBackward " << e.function << ", ref count is, " << e.function.use_count() << std::endl;
+  }
+}
 """)
 
 CALL_VIA_TYPE = CodeTemplate("""\

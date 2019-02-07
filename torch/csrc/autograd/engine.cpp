@@ -378,13 +378,28 @@ static variable_list call_function(FunctionTask& task) {
   return outputs;
 }
 
+static void print_ref_count(Function& fn) {
+  for (auto & edge : fn.next_edges()) {
+    if (edge.function) {
+      if (edge.function->name().compare("BroadcastBackward") == 0) {
+        std::cout << "*************** " << edge.function -> name() << " by " << fn.name() << ", " << edge.function.use_count() << ", " << edge.function << std::endl;
+      }
+      print_ref_count(*edge.function);
+    }
+  }
+}
+
 auto Engine::evaluate_function(FunctionTask& task) -> void {
+  print_ref_count(*task.fn);
+  return;
   // If exec_info is not empty, we have to instrument the execution
+  /*
+  std::lock_guard<std::mutex> lock(task.base->mutex);
   auto & exec_info = task.base->exec_info;
   if (!exec_info.empty()) {
     auto & fn_info = exec_info.at(task.fn.get());
     if (auto *capture_vec = fn_info.captures.get()) {
-      std::lock_guard<std::mutex> lock(task.base->mutex);
+      //std::lock_guard<std::mutex> lock(task.base->mutex);
       for (auto capture : *capture_vec) {
         task.base->captured_vars[capture.output_idx] = task.inputs[capture.input_idx];
       }
@@ -395,6 +410,8 @@ auto Engine::evaluate_function(FunctionTask& task) -> void {
   auto outputs = call_function(task);
 
   auto& fn = *task.fn;
+  std::cout << "==== " << fn.name() << ", " << task.fn << std::endl;
+
   if (!task.base->keep_graph) {
     fn.release_variables();
   }
@@ -415,7 +432,7 @@ auto Engine::evaluate_function(FunctionTask& task) -> void {
     }
   }
 
-  std::lock_guard<std::mutex> lock(task.base->mutex);
+  //std::lock_guard<std::mutex> lock(task.base->mutex);
   for (int i = 0; i < num_outputs; ++i) {
     auto& output = outputs[i];
     const auto& next = fn.next_edge(i);
@@ -464,6 +481,7 @@ auto Engine::evaluate_function(FunctionTask& task) -> void {
       }
     }
   }
+  */
 }
 
 /* Computes the number of dependencies for each function which requires grad */

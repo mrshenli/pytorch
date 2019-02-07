@@ -30,6 +30,8 @@ Variable::Impl::Impl(at::Tensor data, bool requires_grad, Edge gradient_edge)
       output_nr_(gradient_edge.input_nr),
       pyobj_(nullptr) {
   // set_requires_grad also checks error conditions.
+    std::cout << " ==================================== creating new var " << grad_fn_.use_count() << std::endl;
+
   set_requires_grad(requires_grad);
   AT_CHECK(
       !grad_fn_ || !requires_grad_,
@@ -192,12 +194,14 @@ std::shared_ptr<Function>& Variable::ViewImpl::get_grad_fn() {
   auto current_version = version_counter_.current_version();
   if (attr_version != current_version) {
     AT_ASSERT(output_nr_ == 0);
+    std::cout << "!!!!!! calling make_shared " << std::endl;
     auto fn = std::make_shared<generated::AsStridedBackward>();
     fn->self_geometry = at::TensorGeometry(base_);
     fn->size = sizes().vec();
     fn->stride = strides().vec();
     fn->storage_offset = data_.storage_offset();
     fn->set_next_edges(collect_next_edges(base_));
+
     fn->add_input_metadata(
       base_.type()
     , sizes() // Note: sizes(), not base_.sizes(), is intentional

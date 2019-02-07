@@ -1115,6 +1115,7 @@ def linear(input, weight, bias=None):
     """
     if input.dim() == 2 and bias is not None:
         # fused op is marginally faster
+        print ("==== before calling addmm")
         return torch.addmm(bias, input, weight.t())
 
     output = input.matmul(weight.t())

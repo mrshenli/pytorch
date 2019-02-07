@@ -57,6 +57,8 @@ def parallel_apply(modules, inputs, kwargs_tup=None, devices=None):
                 if not isinstance(input, (list, tuple)):
                     input = (input,)
                 output = module(*input, **kwargs)
+                print ("---- worker ", i, " after ")
+                output.mean().backward()
             with lock:
                 results[i] = output
         except Exception as e:
@@ -64,15 +66,26 @@ def parallel_apply(modules, inputs, kwargs_tup=None, devices=None):
                 results[i] = e
 
     if len(modules) > 1:
+        """
         threads = [threading.Thread(target=_worker,
                                     args=(i, module, input, kwargs, device))
                    for i, (module, input, kwargs, device) in
                    enumerate(zip(modules, inputs, kwargs_tup, devices))]
 
+
         for thread in threads:
             thread.start()
-        for thread in threads:
             thread.join()
+            del thread
+        """
+        [_worker(i, module, input, kwargs, device)
+                   for i, (module, input, kwargs, device) in
+                   enumerate(zip(modules, inputs, kwargs_tup, devices))]
+
+        print ("-------- in parallel_apply ")
+        results[0].mean().backward()
+        results[1].mean().backward()
+        print ("-------- out parallel_apply ")
     else:
         _worker(0, modules[0], inputs[0], kwargs_tup[0], devices[0])
 
