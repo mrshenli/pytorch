@@ -119,7 +119,12 @@ Operator createOperatorFromC10(const c10::OperatorHandle& op) {
         }
       }
 
+      std::cout << "==== before lookup & call\n" << std::flush;
+
       c10::Dispatcher::singleton().lookup(op, &stack).call(&stack);
+
+      std::cout << "==== after lookup & call\n" << std::flush;
+
 
       // wrap tensor outputs as variable
       for (auto iter = stack.end() - output_size; iter != stack.end(); ++iter) {

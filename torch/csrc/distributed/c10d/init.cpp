@@ -22,6 +22,9 @@
 #include <torch/csrc/distributed/c10d/reducer.h>
 #include <torch/csrc/utils/object_ptr.h>
 #include <torch/csrc/utils/pybind.h>
+#include <torch/types.h>
+
+
 
 namespace torch {
 namespace distributed {
