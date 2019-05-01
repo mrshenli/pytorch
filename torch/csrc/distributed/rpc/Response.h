@@ -35,8 +35,8 @@ class Response : public Message {
     }
     pickler.addIValue(IValue(code_));
     pickler.addIValue(IValue(id));
-    pickler.addIValue(IValue(src_rank));
-    pickler.addIValue(IValue(dst_rank));
+    pickler.addIValue(IValue(src));
+    pickler.addIValue(IValue(dst));
     pickler.finish();
 
     tensor_table.emplace_back(
@@ -47,7 +47,7 @@ class Response : public Message {
     torch::save(tensor_table, stream);
   }
 
-  static Response load(std::istream& stream) {
+  static std::unique_ptr<Response> load(std::istream& stream) {
     std::vector<at::Tensor> tensor_table;
     torch::load(tensor_table, stream);
 
@@ -59,19 +59,21 @@ class Response : public Message {
                         &tensor_table);
 
     auto values = unpickler.parse_ivalue_list();
-    auto code = values.back().toInt();
+
+    auto dst = values.back().toInt();
+    values.pop_back();
+
+    auto src = values.back().toInt();
     values.pop_back();
 
     auto id = values.back().toInt();
     values.pop_back();
 
-    auto src_rank = values.back().toInt();
+    auto code = values.back().toInt();
     values.pop_back();
 
-    auto dst_rank = values.back().toInt();
-    values.pop_back();
-
-    return Response(code, values, id, src_rank, dst_rank);
+    return std::unique_ptr<Response>(
+      new Response(code, values, id, src, dst));
   }
 
  private:

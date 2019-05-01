@@ -5,12 +5,15 @@
 
 namespace rpc {
 
+using RpcCallback = std::function<void(std::unique_ptr<Message>)>;
+using MessageDeserializer = std::function<std::unique_ptr<Message>(std::istream& stream)>;
 
 class Transport {
  public:
   virtual void send(std::shared_ptr<Message> msg) = 0;
-  virtual std::shared_ptr<Response> receiveResponse() = 0;
-  virtual std::shared_ptr<Request> receiveRequest() = 0;
+  virtual void serveRpc(MessageDeserializer md, RpcCallback cb) = 0;
+
+  // expose:
 };
 
 }

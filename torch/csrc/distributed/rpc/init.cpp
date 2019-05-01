@@ -3,6 +3,9 @@
 
 
 #include <torch/csrc/distributed/rpc/client.h>
+#include <torch/csrc/distributed/rpc/server.h>
+#include <torch/csrc/distributed/rpc/Transport.h>
+#include <torch/csrc/distributed/rpc/ProcessGroupTransport.h>
 
 
 namespace torch {
@@ -24,7 +27,7 @@ PyObject* rpc_init(PyObject* _unused) {
 
   module.def("rpc", &::rpc::invoke);
 
-  shared_ptr_class_<::rpc::RpcWork>(module, "RpcWork")
+  auto rpcWork = shared_ptr_class_<::rpc::RpcWork>(module, "RpcWork")
       .def(
           "wait",
           &::rpc::RpcWork::wait,
@@ -33,6 +36,23 @@ PyObject* rpc_init(PyObject* _unused) {
           "get",
           &::rpc::RpcWork::get_py_obj,
           py::call_guard<py::gil_scoped_release>());
+
+  auto transport =
+    shared_ptr_class_<::rpc::Transport>(module, "Transport");
+
+
+  auto processGroupTransport =
+    shared_ptr_class_<::rpc::ProcessGroupTransport>(
+      module, "ProcessGroupTransport", transport)
+    .def(py::init<::c10d::ProcessGroup&>());
+
+  auto client =
+    shared_ptr_class_<::rpc::Client>(module, "Client")
+    .def(py::init<std::shared_ptr<::rpc::Transport>, int64_t>());
+
+  auto server =
+    shared_ptr_class_<::rpc::Server>(module, "Server")
+    .def(py::init<std::shared_ptr<::rpc::Transport>, int64_t>());
 
   Py_RETURN_TRUE;
 }

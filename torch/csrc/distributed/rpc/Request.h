@@ -12,12 +12,16 @@ class Request : public Message {
   Request(std::shared_ptr<Operator> op,
           const std::vector<at::IValue> args,
           int64_t id,
-          int64_t src_rank,
-          int64_t dst_rank)
-    : Message(id, src_rank, dst_rank), op_(op), args_(std::move(args)) {}
+          int64_t src,
+          int64_t dst)
+    : Message(id, src, dst), op_(op), args_(std::move(args)) {}
 
   at::Symbol symbol() {
     return at::Symbol::fromQualString(op_->schema().name());
+  }
+
+  std::shared_ptr<Operator> op() {
+    return op_;
   }
 
   std::vector<at::IValue> args() {
@@ -32,14 +36,15 @@ class Request : public Message {
     for (auto arg: args_) {
       pickler.addIValue(arg);
     }
-    pickler.addIValue(IValue(op_->schema().name()));
-    pickler.addIValue(IValue(c10::toString(op_->schema())));
+
+    std::string str_schema = toString(op_->schema());
+    pickler.addIValue(IValue(str_schema));
     pickler.addIValue(IValue(id));
-    pickler.addIValue(IValue(src_rank));
-    pickler.addIValue(IValue(dst_rank));
+    pickler.addIValue(IValue(src));
+    pickler.addIValue(IValue(dst));
     pickler.finish();
 
-    tensor_table.emplace_back(
+    tensor_table.push_back(
       torch::from_blob((void *)pickler.stack().data(),
                        pickler.stack().size(),
                        {torch::kChar}));
@@ -47,7 +52,7 @@ class Request : public Message {
     torch::save(tensor_table, stream);
   }
 
-  static Request load(std::istream& stream) {
+  static std::unique_ptr<Request> load(std::istream& stream) {
     std::vector<at::Tensor> tensor_table;
     torch::load(tensor_table, stream);
 
@@ -59,30 +64,35 @@ class Request : public Message {
                         &tensor_table);
 
     auto args = unpickler.parse_ivalue_list();
-    std::string str_schema = args.back().toStringRef();
+
+    auto dst = args.back().toInt();
     args.pop_back();
 
-    auto symbol = at::Symbol::fromQualString(args.back().toStringRef());
+    auto src = args.back().toInt();
     args.pop_back();
 
     auto id = args.back().toInt();
     args.pop_back();
 
-    auto src_rank = args.back().toInt();
+    auto str_schema = args.back().toStringRef();
     args.pop_back();
 
-    auto dst_rank = args.back().toInt();
-    args.pop_back();
+    //std::cout << "=== what is the str? " << args.back().toStringRef() << std::endl << std::flush;
+    //auto symbol = at::Symbol::fromQualString(args.back().toStringRef());
+    //args.pop_back();
+    auto str_symbol = str_schema.substr(0, str_schema.find("("));
+    auto symbol = at::Symbol::fromQualString(str_symbol);
 
     auto op = matchOperator(symbol, str_schema);
-    return Request(op, args, id, src_rank, dst_rank);
+    return std::unique_ptr<Request>(
+      new Request(op, args, id, src, dst));
   }
  private:
 
   static std::shared_ptr<Operator> matchOperator(
       at::Symbol symbol, std::string str_schema) {
     for (auto op: torch::jit::getAllOperatorsFor(symbol)) {
-      if (c10::toString(op->schema()).compare(str_schema) == 0) {
+      if (toString(op->schema()).compare(str_schema) == 0) {
         return op;
       }
     }

@@ -19,6 +19,7 @@ class RpcWork {
 
 public:
 
+ // TODO: use jit::future
   RpcWork(std::shared_ptr<Request> request) : request_(request) {}
 
   void wait() {
@@ -52,19 +53,21 @@ class Client {
  public:
 
   Client(std::shared_ptr<Transport> transport, int64_t rank)
-      : rank_(rank), nextId_(0), stop_(false), transport_(transport) {
-    listenerThread_ = std::thread(&Client::listenerLoop, this);
+      : rank_(rank), nextId_(100), transport_(transport) {
+    transport->serveRpc(Response::load, [this](std::unique_ptr<Message> msg){
+      this->processResponse(std::move(msg));
+    });
   }
 
   std::shared_ptr<RpcWork> sendRequest(
-      std::shared_ptr<Operator> op, std::vector<IValue> args, int64_t dstRank) {
+      std::shared_ptr<Operator> op, std::vector<IValue> args, int64_t dst) {
     std::shared_ptr<Request> request =
-      std::make_shared<Request>(op, args, getId(), rank_, dstRank);
+      std::make_shared<Request>(op, args, getId(), rank_, dst);
     transport_->send(request);
     std::shared_ptr<RpcWork> work = std::make_shared<RpcWork>(request);
     {
       std::lock_guard<std::mutex> lock{responseMutex_};
-      pendingResponses[request->id] = work;
+      pendingResponses_[request->id] = work;
     }
     return work;
   }
@@ -76,25 +79,22 @@ class Client {
     return nextId_++;
   }
 
-  void listenerLoop() {
-    while(!stop_) {
-      std::shared_ptr<Response> response = transport_->receiveResponse();
-      std::shared_ptr<RpcWork> work;
-      {
-        std::lock_guard<std::mutex> lock{responseMutex_};
-        work = pendingResponses[response->id];
-        pendingResponses.erase(response->id);
-      }
-      work->notify(response);
+  void processResponse(std::shared_ptr<Message> msg) {
+    std::shared_ptr<Response> response =
+      std::static_pointer_cast<Response>(msg);
+    std::shared_ptr<RpcWork> work;
+    {
+      std::lock_guard<std::mutex> lock{responseMutex_};
+      work = pendingResponses_[response->id];
+      pendingResponses_.erase(response->id);
     }
+    work->notify(response);
   }
 
   const int64_t rank_;
   int64_t nextId_;
-  bool stop_;
   std::shared_ptr<Transport> transport_;
-  std::thread listenerThread_;
-  std::unordered_map<int64_t, std::shared_ptr<RpcWork>> pendingResponses;
+  std::unordered_map<int64_t, std::shared_ptr<RpcWork>> pendingResponses_;
   std::mutex idMutex_;
   std::mutex responseMutex_;
 };
@@ -109,9 +109,6 @@ std::shared_ptr<RpcWork> invoke(Client& client,
   for (auto op: torch::jit::getAllOperatorsFor(symbol)) {
     try {
       Stack stack = torch::jit::createStackForSchema(op->schema(), args, kwargs);
-      //std::cout << "=== matching signature is " << op->schema() << std::endl;
-      //std::cout << "=== op is " << c10::toString(op->schema()) << std::endl;
-      //std::cout << "=== name is " << op->schema().name() << ", overload_name is " << op->schema().overload_name() << std::endl;
       return client.sendRequest(op, stack, dst_rank);
     } catch (std::runtime_error) {}
   }
