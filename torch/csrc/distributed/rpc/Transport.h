@@ -12,8 +12,6 @@ class Transport {
  public:
   virtual void send(std::shared_ptr<Message> msg) = 0;
   virtual void serveRpc(MessageDeserializer md, RpcCallback cb) = 0;
-
-  // expose:
 };
 
 }

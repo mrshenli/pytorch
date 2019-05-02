@@ -25,6 +25,7 @@ PyObject* rpc_init(PyObject* _unused) {
 
   auto module = py::handle(rpc_module).cast<py::module>();
 
+  // TODO: use target.rpc instead of dist.rpc
   module.def("rpc", &::rpc::invoke);
 
   auto rpcWork = shared_ptr_class_<::rpc::RpcWork>(module, "RpcWork")
