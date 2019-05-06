@@ -34,6 +34,7 @@ std::shared_ptr<RpcWork> Client::sendRequest(
     std::shared_ptr<Operator> op, std::vector<IValue> args, int64_t dst) {
   std::shared_ptr<Request> request =
     std::make_shared<Request>(op, args, getId(), rank_, dst);
+  // return standard future
   transport_->send(request);
   std::shared_ptr<RpcWork> work = std::make_shared<RpcWork>(request);
   {
@@ -43,6 +44,7 @@ std::shared_ptr<RpcWork> Client::sendRequest(
   return work;
 }
 
+// void Client::processResponse(RpcWork, msg)
 void Client::processResponse(std::shared_ptr<Message> msg) {
   std::shared_ptr<Response> response =
       std::static_pointer_cast<Response>(msg);

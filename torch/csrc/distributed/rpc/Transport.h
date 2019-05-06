@@ -10,7 +10,11 @@ using MessageDeserializer = std::function<std::unique_ptr<Message>(std::istream&
 
 class Transport {
  public:
+  // deserializer can be passed to Transport impls
+  // future<Message> call(Message)
   virtual void send(std::shared_ptr<Message> msg) = 0;
+  // TODO: serveRpc -> serve, RpcCallback -> callback
+  // void serve(cb)
   virtual void serveRpc(MessageDeserializer md, RpcCallback cb) = 0;
 };
 

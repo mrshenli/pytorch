@@ -12,12 +12,15 @@ class Request : public Message {
   Request(std::shared_ptr<Operator> op,
           const std::vector<at::IValue> args,
           int64_t id,
-          int64_t src,
+          int64_t src, // src and dst already available in pg
           int64_t dst);
   at::Symbol symbol();
   std::shared_ptr<Operator> op();
   std::vector<at::IValue> args();
+  // how to do streaming for super large request/response?
+  // serializer save();
   void save(std::ostream& stream) override;
+  // deserializer load();
   static std::unique_ptr<Request> load(std::istream& stream);
 
  private:
