@@ -5,20 +5,23 @@
 #include <torch/csrc/distributed/rpc/Transport.h>
 #include <torch/csrc/distributed/rpc/rpc_headers.h>
 
-#include <thread>
-
-
+namespace torch {
+namespace distributed {
 namespace rpc {
 
 class Server {
  public:
-  Server(std::shared_ptr<Transport> transport, int64_t rank);
+  Server(std::shared_ptr<TransportFactory> transportFactory);
 
  private:
-  void processRequest(std::shared_ptr<Message> msg);
+  static std::unique_ptr<Message> processRequest(
+      int64_t src,
+      std::unique_ptr<Message> msg,
+      std::unique_ptr<SendContext> sendCtx);
 
-  const int64_t rank_;
-  std::shared_ptr<Transport> transport_;
+  std::unique_ptr<Transport> transport_;
 };
 
+}
+}
 }

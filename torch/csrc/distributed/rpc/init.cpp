@@ -1,18 +1,31 @@
 #include <torch/csrc/python_headers.h>
 
-
-
 #include <torch/csrc/distributed/rpc/client.h>
 #include <torch/csrc/distributed/rpc/server.h>
 #include <torch/csrc/distributed/rpc/Transport.h>
 #include <torch/csrc/distributed/rpc/ProcessGroupTransport.h>
-
 
 namespace torch {
 namespace distributed {
 namespace rpc {
 
 namespace {
+
+std::shared_ptr<RpcFuture> py_rpc(Client& client,
+                                  std::string name,
+                                  int64_t dst,
+                                  py::args args,
+                                  py::kwargs kwargs) {
+  Symbol symbol = Symbol::fromQualString(name);
+  for (auto op: torch::jit::getAllOperatorsFor(symbol)) {
+    try {
+      Stack stack =
+          torch::jit::createStackForSchema(op->schema(), args, kwargs);
+      return client.sendRequest(dst, op, stack);
+    } catch (std::runtime_error) {}
+  }
+  throw std::runtime_error("unrecognized function " + name + " with args ...");
+}
 
 template <typename T>
 using shared_ptr_class_ = py::class_<T, std::shared_ptr<T>>;
@@ -25,35 +38,36 @@ PyObject* rpc_init(PyObject* _unused) {
 
   auto module = py::handle(rpc_module).cast<py::module>();
 
-  // TODO: use target.rpc instead of dist.rpc
-  module.def("rpc", &::rpc::invoke);
 
-  auto rpcWork = shared_ptr_class_<::rpc::RpcWork>(module, "RpcWork")
+  auto rpcFuture = shared_ptr_class_<RpcFuture>(module, "RpcFuture")
       .def(
           "wait",
-          &::rpc::RpcWork::wait,
+          &RpcFuture::wait,
           py::call_guard<py::gil_scoped_release>())
       .def(
           "get",
-          &::rpc::RpcWork::get_py_obj,
+          &RpcFuture::get_py_obj,
           py::call_guard<py::gil_scoped_release>());
 
-  auto transport =
-    shared_ptr_class_<::rpc::Transport>(module, "Transport");
 
+  auto transportFactory =
+      shared_ptr_class_<TransportFactory>(module, "TransportFactory");
+      //.def_readwrite("id_", &::rpc::TransportFactory::id_);
 
-  auto processGroupTransport =
-    shared_ptr_class_<::rpc::ProcessGroupTransport>(
-      module, "ProcessGroupTransport", transport)
-    .def(py::init<::c10d::ProcessGroup&>());
+  auto processGroupTransportFactory =
+      shared_ptr_class_<ProcessGroupTransportFactory>(
+          module, "ProcessGroupTransportFactory", transportFactory)
+          .def(py::init<::c10d::ProcessGroup&>());
 
   auto client =
-    shared_ptr_class_<::rpc::Client>(module, "Client")
-    .def(py::init<std::shared_ptr<::rpc::Transport>, int64_t>());
+      shared_ptr_class_<Client>(module, "Client")
+      .def(py::init<std::shared_ptr<TransportFactory>>());
 
   auto server =
-    shared_ptr_class_<::rpc::Server>(module, "Server")
-    .def(py::init<std::shared_ptr<::rpc::Transport>, int64_t>());
+      shared_ptr_class_<Server>(module, "Server")
+      .def(py::init<std::shared_ptr<TransportFactory>>());
+
+  module.def("rpc", &py_rpc);
 
   Py_RETURN_TRUE;
 }

@@ -5,29 +5,51 @@
 #include <torch/serialize.h>
 #include <vector>
 
+namespace torch {
+namespace distributed {
 namespace rpc {
+
+static std::shared_ptr<Operator> matchOperator(
+    at::Symbol symbol, std::string str_schema);
+
+class RequestSerializer : public MessageSerializer {
+ public:
+  RequestSerializer(std::shared_ptr<Operator> op,
+                    const std::vector<IValue>& values)
+      : MessageSerializer(values), op_(op) {}
+
+  int64_t writeNext(std::ostream& os, uint64_t size) override;
+
+ private:
+  std::shared_ptr<Operator> op_;
+};
 
 class Request : public Message {
  public:
   Request(std::shared_ptr<Operator> op,
-          const std::vector<at::IValue> args,
-          int64_t id,
-          int64_t src, // src and dst already available in pg
-          int64_t dst);
-  at::Symbol symbol();
+          const std::vector<at::IValue> args)
+      : Message(std::move(args)), op_(op) {}
+
   std::shared_ptr<Operator> op();
   std::vector<at::IValue> args();
-  // how to do streaming for super large request/response?
-  // serializer save();
-  void save(std::ostream& stream) override;
-  // deserializer load();
-  static std::unique_ptr<Request> load(std::istream& stream);
+  std::unique_ptr<MessageSerializer> serializer() override;
 
  private:
-  static std::shared_ptr<Operator> matchOperator(
-      at::Symbol symbol, std::string str_schema);
-
   std::shared_ptr<Operator> op_;
-  std::vector<at::IValue> args_;
 };
+
+class RequestDeserializer : public MessageDeserializer {
+ public:
+  std::unique_ptr<Message> readNext(std::istream& is, int64_t size) override;
+};
+
+class RequestDeserializerFactory : public MessageDeserializerFactory {
+ public:
+  std::unique_ptr<MessageDeserializer> deserializer() override {
+    return std::unique_ptr<RequestDeserializer>(new RequestDeserializer());
+  }
+};
+
+}
+}
 }

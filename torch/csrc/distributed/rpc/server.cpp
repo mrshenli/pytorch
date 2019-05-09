@@ -1,16 +1,23 @@
 #include <torch/csrc/distributed/rpc/server.h>
 
+namespace torch {
+namespace distributed {
 namespace rpc {
 
-Server::Server(std::shared_ptr<Transport> transport, int64_t rank)
-  : rank_(rank), transport_(transport) {
-  transport->serveRpc(Request::load, [this](std::unique_ptr<Message> msg){
-    this->processRequest(std::move(msg));
-  });
+Server::Server(std::shared_ptr<TransportFactory> transportFactory) {
+  transportFactory->createTransport(
+      processRequest,
+      std::unique_ptr<RequestDeserializerFactory>(
+          new RequestDeserializerFactory()),
+      false);
 }
 
-void Server::processRequest(std::shared_ptr<Message> msg) {
-  std::shared_ptr<Request> request = std::static_pointer_cast<Request>(msg);
+std::unique_ptr<Message> Server::processRequest(
+    int64_t src,
+    std::unique_ptr<Message> msg,
+    std::unique_ptr<SendContext> /* unused */) {
+  std::unique_ptr<Request> request =
+      static_unique_ptr_cast<Message, Request>(std::move(msg));
   std::shared_ptr<Operator> op = request->op();
   std::vector<at::IValue> args = request->args();
 
@@ -18,8 +25,9 @@ void Server::processRequest(std::shared_ptr<Message> msg) {
   stack.insert(stack.end(), args.begin(), args.end());
   op->getOperation()(stack);
 
-  transport_->send(std::make_shared<Response>(
-    Response(0, stack, request->id, request->dst, request->src)));
+  return std::unique_ptr<Response>(new Response(0, stack));
 }
 
+}
+}
 }

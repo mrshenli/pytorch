@@ -1,7 +1,9 @@
 import torch
 
+print("=== distributed ==")
 
 def is_available():
+    print ("is available ? ", hasattr(torch._C, "_c10d_init") and hasattr(torch._C, "_rpc_init"))
     return hasattr(torch._C, "_c10d_init") and hasattr(torch._C, "_rpc_init")
 
 
@@ -15,3 +17,4 @@ if is_available():
     # See the comment in `distributed_c10d.py` above `_backend` on why we expose
     # this.
     from .distributed_c10d import _backend  # noqa: F401
+    from .rpc import *  # noqa: F401

@@ -1,23 +1,12 @@
 #include <torch/csrc/distributed/rpc/Response.h>
 
+namespace torch {
+namespace distributed {
 namespace rpc {
 
-Response::Response(int64_t code,
-         std::vector<at::IValue> values,
-         int64_t id,
-         int64_t src_rank,
-         int64_t dst_rank)
-  : Message(id, src_rank, dst_rank), code_(code), values_(std::move(values)) {}
-
-int Response::code() {
-  return code_;
-}
-
-const std::vector<at::IValue> Response::values() {
-  return values_;
-}
-
-void Response::save(std::ostream& stream) {
+// ResponseSerializer
+int64_t ResponseSerializer::writeNext(std::ostream& os, uint64_t size) {
+  auto starts_from = os.tellp();
   std::vector<at::Tensor> tensor_table;
   Pickler pickler(&tensor_table);
 
@@ -26,9 +15,6 @@ void Response::save(std::ostream& stream) {
     pickler.addIValue(value);
   }
   pickler.addIValue(IValue(code_));
-  pickler.addIValue(IValue(id));
-  pickler.addIValue(IValue(src));
-  pickler.addIValue(IValue(dst));
   pickler.finish();
 
   tensor_table.emplace_back(
@@ -36,12 +22,29 @@ void Response::save(std::ostream& stream) {
                      pickler.stack().size(),
                      {torch::kChar}));
 
-  torch::save(tensor_table, stream);
+  torch::save(tensor_table, os);
+  return os.tellp() - starts_from;
 }
 
-std::unique_ptr<Response> Response::load(std::istream& stream) {
+// Response
+int64_t Response::code() {
+  return code_;
+}
+
+const std::vector<at::IValue> Response::values() {
+  return values_;
+}
+
+std::unique_ptr<MessageSerializer> Response::serializer() {
+  return std::unique_ptr<ResponseSerializer>(
+      new ResponseSerializer(code_, values_));
+}
+
+// ResponseDeserializer
+std::unique_ptr<Message> ResponseDeserializer::readNext(
+    std::istream& is, int64_t size) {
   std::vector<at::Tensor> tensor_table;
-  torch::load(tensor_table, stream);
+  torch::load(tensor_table, is);
 
   auto meta_tensor = std::move(tensor_table.back());
   tensor_table.pop_back();
@@ -52,19 +55,12 @@ std::unique_ptr<Response> Response::load(std::istream& stream) {
 
   auto values = unpickler.parse_ivalue_list();
 
-  auto dst = values.back().toInt();
-  values.pop_back();
-
-  auto src = values.back().toInt();
-  values.pop_back();
-
-  auto id = values.back().toInt();
-  values.pop_back();
-
   auto code = values.back().toInt();
   values.pop_back();
 
-  return std::unique_ptr<Response>(
-    new Response(code, values, id, src, dst));
+  return std::unique_ptr<Response>(new Response(code, values));
+}
+
+} // namespace rpc
 }
 }
