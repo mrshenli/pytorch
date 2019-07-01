@@ -231,11 +231,8 @@ if (USE_DISTRIBUTED)
         ${TORCH_SRC_DIR}/csrc/distributed/c10d/reducer.cpp
 
         ${TORCH_SRC_DIR}/csrc/distributed/rpc/init.cpp
-        ${TORCH_SRC_DIR}/csrc/distributed/rpc/ProcessGroupTransport.cpp
-        ${TORCH_SRC_DIR}/csrc/distributed/rpc/Request.cpp
-        ${TORCH_SRC_DIR}/csrc/distributed/rpc/Response.cpp
-        ${TORCH_SRC_DIR}/csrc/distributed/rpc/server.cpp
-        ${TORCH_SRC_DIR}/csrc/distributed/rpc/client.cpp
+        ${TORCH_SRC_DIR}/csrc/distributed/rpc/RpcAgent.cpp
+        ${TORCH_SRC_DIR}/csrc/distributed/rpc/ProcessGroupAgent.cpp
         )
 
       list(APPEND TORCH_PYTHON_LINK_LIBRARIES c10d)
