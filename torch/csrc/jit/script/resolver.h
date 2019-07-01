@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ATen/core/jit_type.h>
+#include <ATen/core/qualified_name.h>
 #include <torch/csrc/jit/script/sugared_value.h>
 
 namespace torch {
@@ -36,7 +37,7 @@ struct Resolver {
       const SourceRange& loc) const = 0;
 
   // Resolve `name` to a TypePtr.
-  virtual TypePtr resolveType(const std::string& name) const = 0;
+  virtual TypePtr resolveType(const std::string& name, const SourceRange& loc) const = 0;
 };
 
 // A resolver that only understands "torch.foo()" lookups.
@@ -51,8 +52,8 @@ struct NativeResolver : public Resolver {
     return nullptr;
   }
 
-  TypePtr resolveType(const std::string& name) const override {
-    return ClassType::get(name);
+  TypePtr resolveType(const std::string& name, const SourceRange& loc) const override {
+    return nullptr;
   }
 };
 
