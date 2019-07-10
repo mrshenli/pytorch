@@ -1,5 +1,6 @@
 #pragma once
 
+#include <torch/csrc/distributed/rpc/Message.h>
 #include <torch/csrc/distributed/rpc/rpc_headers.h>
 #include <torch/serialize.h>
 #include <vector>
@@ -11,21 +12,21 @@ namespace rpc {
 static std::shared_ptr<Operator> matchOperator(
     at::Symbol symbol, std::string str_schema);
 
-class TORCH_API Request final {
+class TORCH_API BuiltinOp final {
  public:
-  Request(std::shared_ptr<Operator> op,
+  BuiltinOp(std::shared_ptr<Operator> op,
           const std::vector<at::IValue> args)
-      : args_(std::move(args)), op_(op) {}
+      : stack_(std::move(args)), op_(op) {}
 
-  ~Request() {}
+  ~BuiltinOp() {}
 
   std::shared_ptr<Operator> op();
-  const std::vector<at::IValue>& args();
-  std::vector<at::IValue> toIValues();
-  static Request fromIValues(std::vector<at::IValue> values);
+  std::vector<at::IValue>& stack();
+  Message toMessage();
+  static BuiltinOp fromMessage(Message message);
 
  private:
-  const std::vector<at::IValue> args_;
+  std::vector<at::IValue> stack_;
   std::shared_ptr<Operator> op_;
 };
 

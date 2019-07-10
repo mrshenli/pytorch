@@ -1,9 +1,7 @@
 import torch
 
-print("=== distributed ==")
 
 def is_available():
-    print ("is available ? ", hasattr(torch._C, "_c10d_init") and hasattr(torch._C, "_rpc_init"))
     return hasattr(torch._C, "_c10d_init") and hasattr(torch._C, "_rpc_init")
 
 

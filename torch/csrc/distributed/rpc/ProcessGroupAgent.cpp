@@ -4,11 +4,49 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
+namespace {
+
+void serialize(Message message, std::ostream& os) {
+  auto data = static_cast<void*>(message.meta().data());
+  auto size = message.meta().size();
+
+  auto& tensors = message.tensors();
+  tensors.push_back(torch::from_blob(data, size, {torch::kChar}));
+  tensors.push_back(torch::tensor(
+      {message.id(), (int64_t) message.type()}, {torch::kInt64}
+  ));
+
+  torch::save(tensors, os);
+}
+
+Message deserialize(std::istream& is) {
+  std::vector<torch::Tensor> tensors;
+
+  torch::load(tensors, is);
+
+  auto miscTensor = std::move(tensors.back());
+  tensors.pop_back();
+  auto metaTensor = std::move(tensors.back());
+  tensors.pop_back();
+
+  int64_t* miscItems = miscTensor.storage().data<int64_t>();
+  int64_t id = miscItems[0];
+  MessageType type = MessageType(miscItems[1]);
+
+  std::vector<char> meta(metaTensor.numel());
+  std::memcpy(
+      meta.data(), metaTensor.storage().data(), metaTensor.numel());
+
+  return Message(std::move(meta), std::move(tensors), type, id);
+}
+
+} // namespace
+
 ProcessGroupAgent::ProcessGroupAgent(
     std::string workerName,
     std::unordered_map<std::string, int> nameMap,
     c10d::ProcessGroup& pg)
-    : RpcAgent(std::move(workerName)),
+    : RpcAgent(std::move(workerName), processRequestSync),
       nameMap_(std::move(nameMap)),
       stop_(false),
       pg_(pg),
@@ -35,61 +73,40 @@ void ProcessGroupAgent::shutdown() {
   // cannot put this into the destructor, as it is not safe to call virtual
   // functions in constructor and destructor. We can drop this when we can
   // gracefully abort a recvAnysource.
-  std::cout << "=== calling destructor \n" << std::flush;
   int dst = (pg_.getRank() + 1) % pg_.getSize();
   std::unique_ptr<std::stringstream> stream(new std::stringstream);
   *stream << 0;
-  enqueue(SendWork(dst, std::move(stream), nextId(), SHUTDOWN_TYPE));
+  enqueue(SendWork(dst, std::move(Message({}, {}, MessageType::SHUTDOWN))));
   std::unique_lock<std::mutex> lock(sendQueueMutex_);
-  std::cout << "-- after enqueue \n" << std::flush;
   workConsumeCV_.wait(lock, [&] { return sendQueue_.empty(); });
-  std::cout << "-- after wait \n" << std::flush;
   stop_ = true;
   lock.unlock();
 
   workProduceCV_.notify_all();
-  std::cout << "-- waiting for gcThread\n" << std::flush;
   sendThread_.join();
-  std::cout << "-- waiting for listenerTHread\n" << std::flush;
   listenerThread_.join();
-  std::cout << "done destructor\n" << std::flush;
 }
 
-void ProcessGroupAgent::_send(
-    std::string dstName,
-    const int64_t requestId,
-    const std::vector<at::IValue> values,
-    const int type) {
-  // TODO check if dstName is known
-  std::cout << "--- in _send() \n" << std::flush;
-  std::unique_ptr<std::stringstream> stream(new std::stringstream);
-  Serializer serializer(values);
-  std::cout << "-- before writeNext \n " << std::flush;
-  serializer.writeNext(*stream, 0);
-
-  std::cout << "--- dst name is " << dstName << std::endl << std::flush;
+std::shared_ptr<Future> ProcessGroupAgent::send(
+    std::string dstName, Message message) {
   if (nameMap_.find(dstName) == nameMap_.end()) {
     throw std::runtime_error("unrecoganized destination in _send");
   }
-  const int dst = nameMap_[dstName];
-  SendWork work(dst, std::move(stream), requestId, type);
-  enqueue(std::move(work));
-}
 
-c10::intrusive_ptr<c10::ivalue::Future> ProcessGroupAgent::sendRequest(
-    std::string dstName, Request request) {
-  std::cout << "=== in send request \n" << std::flush;
   auto requestId = nextId();
-  auto future = c10::make_intrusive<c10::ivalue::Future>();
-  futures_[requestId] = future;
-  _send(std::move(dstName), requestId, request.toIValues(), REQUEST_TYPE);
-  std::cout << "=== finished sending request \n" << std::flush;
-  return future;
-}
+  auto future = std::make_shared<Future>();
+  if (MessageType::BUILTIN_OP == message.type() ||
+      MessageType::PYTHON_UDF_OP == message.type()) {
+    futures_[requestId] = future;
+    message.setId(requestId);
+  } else {
+    future->markCompleted();
+  }
 
-void ProcessGroupAgent::sendResponse(
-    std::string dstName, const int64_t requestId, Response response) {
-  _send(std::move(dstName), requestId, response.toIValues(), RESPONSE_TYPE);
+  const int dst = nameMap_[dstName];
+  SendWork work(dst, std::move(message));
+  enqueue(std::move(work));
+  return future;
 }
 
 void ProcessGroupAgent::enqueue(SendWork work) {
@@ -117,78 +134,56 @@ void ProcessGroupAgent::sendLoop() {
 
     workConsumeCV_.notify_one();
 
-    std::string str = work.data_->str();
 
-    std::vector<torch::Tensor> metaData = {
+    std::stringstream ss;
+    serialize(std::move(work.message_), ss);
+    std::string str = ss.str();
+
+    std::vector<torch::Tensor> header = {
       torch::tensor(
         {
-          work.requestId_,
           (int64_t)pg_.getRank(),
           (int64_t)str.length(),
-          (int64_t)work.type_
-        }, {torch::kInt64})
+        }, {torch::kLong})
     };
-    std::cout << "-- before sendTensor 1\n" << std::flush;
-    pg_.send(metaData, work.dstRank_, work.dstRank_ /* channelTag */)->wait();
-    std::cout << "-- sending data tensor " << str.length() << ". " << str << std::flush;
-    if (SHUTDOWN_TYPE != work.type_) {
-      std::vector<torch::Tensor> dataTensor =
-          {torch::from_blob((void *)str.c_str(), str.length(), {torch::kChar})};
-      pg_.send(dataTensor, work.dstRank_, work.dstRank_ /* channelTag */)->wait();
-    }
+    pg_.send(header, work.dstRank_, work.dstRank_ /* channelTag */)->wait();
+    std::vector<torch::Tensor> payload =
+        {torch::from_blob((void *)str.c_str(), str.length(), {torch::kChar})};
+    pg_.send(payload, work.dstRank_, work.dstRank_ /* channelTag */)->wait();
 
     lock.lock();
   }
 }
 
 void ProcessGroupAgent::listen() {
-  Deserializer deserializer;
   while (!stop_) {
-    // rank, tensor size, requestId
-    std::vector<torch::Tensor> meta = {torch::empty({4}, {torch::kInt64})};
-    std::cout << "-- " << pg_.getRank() << " waiting recvAnysource\n" << std::flush;
-    pg_.recvAnysource(meta, pg_.getRank())->wait();
-    std::cout << "-- " << pg_.getRank() << " got one from recvAnysource " << meta[0].numel() * meta[0].element_size() << std::flush;
-    int64_t* meta_items = meta.front().data<int64_t>();
-    auto requestId = meta_items[0];
-    auto srcRank = meta_items[1];
-    auto size = meta_items[2];
-    auto type = meta_items[3];
+    // rank, tensor size
+    std::vector<torch::Tensor> header = {torch::empty({2}, {torch::kInt64})};
+    pg_.recvAnysource(header, pg_.getRank())->wait();
+    int64_t* header_items = header.front().storage().data<int64_t>();
 
-    if (SHUTDOWN_TYPE == type) {
-      break;
-    }
+    auto srcRank = header_items[0];
+    auto size = header_items[1];
 
-    std::cout << "--- " << requestId << ", " << srcRank << ", " << size << ", " << type << std::endl << std::flush;
     std::vector<torch::Tensor> tensors = {torch::empty({size}, {torch::kChar})};
     pg_.recv(tensors, srcRank, pg_.getRank())->wait();
-    std::cout << "-- " << pg_.getRank() << " got the data tensor " << tensors[0].numel() << std::flush;
-    std::istringstream stream(std::string(
+    std::stringstream ss(std::string(
       (char*)tensors[0].storage().data<signed char>(), tensors[0].numel()));
 
-    std::cout << "-- " << pg_.getRank() << " got the data " << stream.str() << std::endl << std::flush;
+    Message message = deserialize(ss);
 
-    auto values = deserializer.readNext(stream, 0);
-    if (type == REQUEST_TYPE) {
-      // TODO: grad a thread from thread pool to process this request
-      processRequest(
-        Request::fromIValues(std::move(values)),
-        RequestContext(
-            [this](std::string dstName,
-                   const int64_t requestId,
-                   Response response) {
-              this->sendResponse(
-                  std::move(dstName), requestId, std::move(response));
-            },
-            reversedNameMap_[srcRank],
-            requestId));
-    } else if (type == RESPONSE_TYPE){
-      Response response = Response::fromIValues(std::move(values));
-      // TODO: handle errors
-      futures_[requestId]->markCompleted(IValue(response.values()));
-      futures_.erase(requestId);
+    if (MessageType::BUILTIN_OP == message.type() ||
+        MessageType::PYTHON_UDF_OP == message.type()) {
+      cb_(reversedNameMap_[srcRank], message, *this);
+    } else if (MessageType::BUILTIN_RET == message.type() ||
+        MessageType::PYTHON_UDF_RET == message.type()) {
+      auto id = message.id();
+      futures_[id]->markCompleted(std::move(message));
+      futures_.erase(id);
+    } else if (MessageType::SHUTDOWN == message.type()) {
+      break;
     } else {
-      throw std::runtime_error("Unrecognized message type.");
+      throw std::runtime_error("unrecognized message type.");
     }
   }
 }

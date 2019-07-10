@@ -1,7 +1,5 @@
 #pragma once
 
-#include <future>
-
 #include <ATen/core/interned_strings.h>
 #include <ATen/core/ivalue.h>
 #include <torch/csrc/jit/operator.h>
@@ -12,7 +10,6 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
-using c10::ivalue::Future;
 using torch::jit::IValue;
 using torch::jit::Operator;
 using torch::jit::Pickler;

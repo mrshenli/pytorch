@@ -65,7 +65,6 @@ class RpcTest(TestCase):
 
         for _ in range(self.world_size * n_output):
             pid, expected, result = c2p.get()
-            print ("====== checking result ", pid, ", expected: ", expected, "result: ", result)
             self.assertEqual(
                 expected,
                 result,
@@ -89,11 +88,9 @@ class RpcTest(TestCase):
         if rank == 0:
             ret = dist.rpc_sync('worker1', 'aten::add', torch.ones(2, 2), torch.ones(2, 2))
             c2p.put((rank, torch.ones(2, 2) * 2, ret))
-            #c2p.put((rank, torch.ones(2, 2) * 2, torch.ones(2, 2) * 2))
         else:
             ret = dist.rpc_sync('worker0', 'aten::add', torch.ones(3, 3), torch.zeros(3, 3))
             c2p.put((rank, torch.ones(3, 3), ret))
-            #c2p.put((rank, torch.zeros(3, 3), torch.zeros(3, 3)))
         p2c.get()
 
         RpcTest._destory_rpc()

@@ -1,5 +1,8 @@
 #include <torch/csrc/python_headers.h>
 
+#include <torch/csrc/distributed/rpc/Future.h>
+#include <torch/csrc/distributed/rpc/functions.h>
+#include <torch/csrc/distributed/rpc/python_functions.h>
 #include <torch/csrc/distributed/rpc/RpcAgent.h>
 #include <torch/csrc/distributed/rpc/ProcessGroupAgent.h>
 #include <torch/csrc/distributed/rpc/rpc_headers.h>
@@ -14,46 +17,10 @@ namespace rpc {
 
 namespace {
 
-c10::intrusive_ptr<c10::ivalue::Future> invoke_rpc(
-    RpcAgent& agent,
-    std::string dstName,
-    std::string opName,
-    py::args args,
-    py::kwargs kwargs) {
-  std::cout<< "== invoking rpc\n" << std::flush;
-  Symbol symbol = Symbol::fromQualString(opName);
-  for (auto op: torch::jit::getAllOperatorsFor(symbol)) {
-    std::cout << "-- trying " << symbol << std::endl << std::flush;
-    try {
-      Stack stack =
-          torch::jit::createStackForSchema(op->schema(), args, kwargs, c10::nullopt);
-      std::cout << "-- got one sending request\n" << std::flush;
-      return agent.sendRequest(dstName, Request(op, stack));
-    } catch (std::runtime_error) {}
-  }
-  throw std::runtime_error("unrecognized function " + opName);
-}
-
-struct RpcFutureWrapper {
-  explicit RpcFutureWrapper(c10::intrusive_ptr<c10::ivalue::Future> fut)
-      : fut(std::move(fut)) {}
-
-  void wait() {
-    fut->wait();
-  }
-
-  py::object get() {
-    return torch::jit::createPyObjectForStack(fut->value().toGenericListRef().vec());
-  }
-
-  c10::intrusive_ptr<c10::ivalue::Future> fut;
-};
-
 template <typename T>
 using shared_ptr_class_ = py::class_<T, std::shared_ptr<T>>;
 
 PyObject* rpc_init(PyObject* _unused) {
-  std::cout << "----- calling rpc_init\n" << std::flush;
   auto dist_module = THPObjectPtr(PyImport_ImportModule("torch.distributed"));
   if (!dist_module) {
     throw python_error();
@@ -66,12 +33,14 @@ PyObject* rpc_init(PyObject* _unused) {
            &RpcAgent::shutdown,
            py::call_guard<py::gil_scoped_release>());
 
-  auto rpcFuture = shared_ptr_class_<RpcFutureWrapper>(module, "RpcFuture")
+  auto future = shared_ptr_class_<Future>(module, "Future")
       .def("wait",
-          &RpcFutureWrapper::wait,
+          &Future::wait,
           py::call_guard<py::gil_scoped_release>())
       .def("get",
-          &RpcFutureWrapper::get,
+          [&](Future& fut) {
+            return to_py_obj(fut.message());
+          },
           py::call_guard<py::gil_scoped_release>());
 
   auto processGroupAgent =
@@ -90,8 +59,7 @@ PyObject* rpc_init(PyObject* _unused) {
       std::string opName,
       py::args args,
       py::kwargs kwargs) {
-    return RpcFutureWrapper(
-        invoke_rpc(agent, std::move(dstName), std::move(opName), args, kwargs));
+    return py_rpc(agent, std::move(dstName), std::move(opName), args, kwargs);
   });
 
   Py_RETURN_TRUE;

@@ -3,9 +3,10 @@
 #include <c10d/ProcessGroup.hpp>
 #include <deque>
 #include <thread>
+#include <torch/csrc/distributed/rpc/Future.h>
 #include <torch/csrc/distributed/rpc/RpcAgent.h>
-#include <torch/csrc/distributed/rpc/Deserializer.h>
-#include <torch/csrc/distributed/rpc/Serializer.h>
+#include <torch/csrc/distributed/rpc/functions.h>
+
 
 namespace torch {
 namespace distributed {
@@ -13,18 +14,12 @@ namespace rpc {
 
 struct SendWork {
   SendWork(const int dstRank,
-           std::unique_ptr<std::stringstream> data,
-           const int64_t requestId,
-           const int type)
+           Message message)
       : dstRank_(dstRank),
-        data_(std::move(data)),
-        requestId_(requestId),
-        type_(type) {}
+        message_(std::move(message)) {}
 
   const int dstRank_;
-  std::unique_ptr<std::stringstream> data_;
-  const int64_t requestId_;
-  const int type_;
+  Message message_;
 
 };
 
@@ -37,15 +32,9 @@ class ProcessGroupAgent : public RpcAgent {
 
   ~ProcessGroupAgent() noexcept(false) override;
 
-  c10::intrusive_ptr<c10::ivalue::Future> sendRequest(
-      std::string dstName, Request request) override;
+  std::shared_ptr<Future> send(std::string to, Message message) override;
 
   void shutdown() override;
-
- protected:
-  void sendResponse(std::string dstName,
-                    const int64_t requestId,
-                    Response response) override;
 
  private:
   void _send(std::string dstName,
@@ -79,7 +68,7 @@ class ProcessGroupAgent : public RpcAgent {
   std::condition_variable workConsumeCV_;
   std::thread sendThread_;
   std::thread listenerThread_;
-  std::unordered_map<int64_t, c10::intrusive_ptr<c10::ivalue::Future>> futures_;
+  std::unordered_map<int64_t, std::shared_ptr<Future>> futures_;
 };
 
 }

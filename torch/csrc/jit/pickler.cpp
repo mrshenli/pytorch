@@ -492,13 +492,7 @@ void Pickler::pushTuple(const IValue& ivalue) {
 }
 
 std::vector<IValue> Unpickler::parse_ivalue_list() {
-  for (auto item : stack_) {
-    std::cout << item.ivalue() << std::endl << std::flush;
-  }
   run();
-  for (auto item : stack_) {
-    std::cout << item.ivalue() << std::endl << std::flush;
-  }
   TORCH_CHECK(
       stack_.size() == 1,
       "Unpickler expected 1 element on the stack, but found ",
