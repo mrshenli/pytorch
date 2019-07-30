@@ -11,7 +11,7 @@ namespace rpc {
 struct TORCH_API FutureMessage final {
 
  public:
-  using Callback = std::function<void(const Message&)>;
+  using Callback = std::function<int(const Message&)>;
 
   void wait();
   void markCompleted(Message message);

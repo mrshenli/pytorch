@@ -4,7 +4,7 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
-py::object to_py_obj(Message message) {
+py::object to_py_obj(const Message& message) {
   switch (message.type()) {
     case MessageType::BUILTIN_RET: {
       BuiltinRet ret = BuiltinRet::fromMessage(message);
@@ -15,6 +15,16 @@ py::object to_py_obj(Message message) {
       AT_ERROR("Unrecognized response message type ", message.type());
     }
   }
+}
+
+FutureMessage::Callback wrap_callback(
+    const std::function<py::object(py::object)>& py_cb) {
+  return [py_cb](const Message& message) -> int{
+    std::cout << "--- got message \n" << std::flush;
+    auto ret = py_cb(to_py_obj(message));
+    std::cout << "--- done wrapper cb\n" << std::flush;
+    return 0;
+  };
 }
 
 std::shared_ptr<FutureMessage> py_rpc(

@@ -51,7 +51,9 @@ void FutureMessage::fireCallbacks() {
   // There is no need to protect callbacks with the lock.
   // Once completed_ is set to true, no one can add new callback to the list.
   for (auto& callback : callbacks) {
+    std::cout << "----- calling one cb\n" << std::flush;
     callback(message_);
+    std::cout << "----- done calling one cb\n" << std::flush;
   }
   callbacks.clear();
 }

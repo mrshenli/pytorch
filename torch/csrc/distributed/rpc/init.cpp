@@ -1,5 +1,6 @@
 #include <torch/csrc/python_headers.h>
 
+#include <pybind11/functional.h>
 #include <torch/csrc/distributed/rpc/FutureMessage.h>
 #include <torch/csrc/distributed/rpc/ProcessGroupAgent.h>
 #include <torch/csrc/distributed/rpc/RpcAgent.h>
@@ -41,6 +42,12 @@ PyObject* rpc_init(PyObject* /* unused */) {
       .def("get",
           [&](FutureMessage& fut) {
             return to_py_obj(fut.message());
+          },
+          py::call_guard<py::gil_scoped_release>())
+      .def("then",
+          [&](FutureMessage& fut,
+              const std::function<py::object(py::object)>& cb) {
+            fut.addCallback(wrap_callback(cb));
           },
           py::call_guard<py::gil_scoped_release>());
 

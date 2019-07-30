@@ -156,5 +156,36 @@ class RpcTest(TestCase):
         self._test_multiprocess(RpcTest._test_4_workers, world_size)
 
 
+    @classmethod
+    def _test_callback(cls, rank, world_size):
+        def callback(ret):
+            print ("--- in callback, ret is ", ret)
+            results.append(ret.clone())
+            print ("--- done with callback")
+            return ret
+
+        if rank == 0:
+            n = rank + 1
+            dstRank = n % world_size
+            fut = dist.rpc_async('worker%d' % dstRank,
+                                 'aten::add',
+                                 torch.ones(n, n),
+                                 torch.ones(n, n))
+            results = []
+
+            fut.then(callback)
+
+            fut.wait()
+            print("--- wait done\n")
+            ret = fut.get()
+            print("--- get done\n")
+            return results, [ret.clone(), ret.clone()]
+        else:
+            return [], []
+
+    def test_callback(self):
+        self._test_multiprocess(RpcTest._test_callback, self.world_size)
+
+
 if __name__ == '__main__':
     run_tests()

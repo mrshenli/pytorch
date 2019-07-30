@@ -14,7 +14,10 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
-py::object to_py_obj(Message message);
+py::object to_py_obj(const Message& message);
+
+FutureMessage::Callback wrap_callback(
+    const std::function<py::object(py::object)>& py_cb);
 
 std::shared_ptr<FutureMessage> py_rpc(
     RpcAgent& agent,
