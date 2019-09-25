@@ -1,0 +1,28 @@
+
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    Note over A : rref = remote(on='B', add)
+    Note over A: user rref{100,1}
+
+    A->>B: remote cmd sent
+    Note over B: create owner rref{100,forks:1->A}
+    B-->>A: ok/err （non-blocking）
+
+    Note over A: ret = rpc_async(on='C',func,rref)
+    A->>C: remote cmd sent rref{100,2}
+    Note over A: hold rref{100,1} alive
+    Note over C: user rref{100, 2}
+    C-->>B: fork request rref{100,2}
+    B-->>C: fork ack rref{100,2}
+    Note over C: run func with rref{100,2}
+    C-->>A: child ack rref{100,2}
+    Note over A: delete rref{100,1}
+    A-->>B: delete rref{100,1}
+    Note over B: delete user {100,1}
+    B-->>A: delete {100,1} ack
+    Note over C: delete user {100, 2}
+    C-->>B: delete user{100, 2}
+    Note over B: delete user {100, 2}
+    B-->>C: delete {100, 2} ack

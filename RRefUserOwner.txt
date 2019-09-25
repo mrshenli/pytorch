@@ -1,0 +1,21 @@
+
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    Note over A : rref = remote(on='B',add)
+    Note over A: user rref{100,1}
+
+    A->>B: remote cmd sent
+    Note over B: create owner rref{100,forks:1->A}
+    B-->>A: confirm user {100, 1}
+
+    Note over A: rref.to_here()
+    A-->>B: to_here cmd sent
+    Note over B: wait till value is ready
+    B-->>A: value of rref
+    A-->>B: delete user rref{100,1}
+    Note over B: delete user {100, 1}
+    B-->>A: delete rref{100,1} ack
+    Note over B: delete owner {100}
+    Note over A: delete user rref{100,1}

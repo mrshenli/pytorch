@@ -1,0 +1,24 @@
+
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    Note over A: rref = remote('B',add)
+    Note over A: user rref{100,1}
+
+    A->>B: remote cmd sent
+    Note over B: owner rref{100,forks:1->A}
+    B-->>A: confirm user {100, 1}
+
+    Note over A: rpc_async('B', func, rref)
+    Note over A: create child {100, 2}
+    Note over A: rref {100, 1} exits scope
+    A->>B: rpc_async amd sent
+    B-->>A: confirm child {100, 2}
+    Note over A: delete user rref{100,1}
+
+    A-->>B: delete user rref{100,1}
+    Note over B: delete user {100, 1}
+    B-->>A: delete rref{100,1} ack
+    B-->>A: rpc_async return value
+    Note over B: delete owner {100}
