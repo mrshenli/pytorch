@@ -5,9 +5,10 @@ namespace distributed {
 namespace rpc {
 
 const Message& FutureMessage::wait() {
+  std::cout << "==== in wait\n" << std::flush;
   std::unique_lock<std::mutex> lock(mutex_);
   finished_cv_.wait(lock, [this] { return completed_.load(); });
-
+  std::cout << "==== wait done\n" << std::flush;
   return message_;
 }
 
@@ -42,6 +43,7 @@ void FutureMessage::addCallback(const FutureMessage::Callback& callback) {
 }
 
 void FutureMessage::fireCallbacks() {
+  std::cout << "--- firing callbacks on fut\n" << std::flush;
   TORCH_CHECK(completed(), "Firing callbacks on incomplete FutureMessage.");
   // There is no need to protect callbacks_ with the lock.
   // Once completed_ is set to true, no one can add new callback to the list.
@@ -49,6 +51,8 @@ void FutureMessage::fireCallbacks() {
     callback(message_);
   }
   callbacks_.clear();
+  std::cout << "--- finished callbacks on fut\n" << std::flush;
+
 }
 
 } // namespace rpc
