@@ -114,8 +114,10 @@ void DistAutogradContext::clearAndWaitForOutstandingRpcs() {
   auto outStandingRpcs = std::move(outStandingRpcs_);
   lock.unlock();
 
+  std::cout << "--- start waiting\n" << std::flush;
   for (const auto& outStandingRpc : outStandingRpcs) {
     outStandingRpc->wait();
+    std::cout << "---- done wait one\n" << std::flush;
   }
 }
 

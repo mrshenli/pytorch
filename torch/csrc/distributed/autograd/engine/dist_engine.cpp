@@ -235,6 +235,7 @@ void DistEngine::executeSendFunction(
 void DistEngine::execute(const variable_list& roots) {
   // Get the current context, if exists. This will throw if we don't have a
   // valid context.
+  std::cout << "=== in dist engine backward\n" << std::flush;
   DistAutogradContext& autogradContext =
       DistAutogradContainer::getInstance().currentContext();
 
@@ -242,10 +243,13 @@ void DistEngine::execute(const variable_list& roots) {
   edge_list rootEdges;
   variable_list grads;
   validateRootsAndRetrieveEdges(roots, rootEdges, grads);
+  std::cout << "=== done validate root\n" << std::flush;
+
 
   std::shared_ptr<Node> graphRoot =
       std::make_shared<GraphRoot>(rootEdges, grads);
   edge_list outputEdges;
+
   // Compute dependencies locally, starting from all roots and all 'send'
   // functions.
   {
@@ -261,11 +265,16 @@ void DistEngine::execute(const variable_list& roots) {
     // Mark the autograd context id as initialized.
     initializedContextIds_.insert(autogradContext.contextId());
   }
+  std::cout << "=== done compute dependencies\n" << std::flush;
+
 
   runEngineAndAccumulateGradients(autogradContext, graphRoot, outputEdges);
+  std::cout << "=== done run engine\n" << std::flush;
 
   // Wait for all of the outstanding rpcs to complete.
   autogradContext.clearAndWaitForOutstandingRpcs();
+  std::cout << "=== done outstanding rpcs\n" << std::flush;
+
 }
 
 } // namespace autograd

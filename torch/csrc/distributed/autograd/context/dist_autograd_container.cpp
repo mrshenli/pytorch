@@ -137,6 +137,7 @@ void DistAutogradContainer::releaseContextIfPresent(int64_t context_id) {
     return;
   }
   sendReleaseContextRpc(context_id);
+  std::cout << "=== releasing if parent\n" << std::flush;
   eraseContextIdAndReset(context_id);
 }
 
@@ -149,6 +150,8 @@ void DistAutogradContainer::releaseContext(int64_t context_id) {
       context_id);
 
   sendReleaseContextRpc(context_id);
+  std::cout << "=== releasing not parent\n" << std::flush;
+
   eraseContextIdAndReset(context_id);
 }
 
@@ -165,6 +168,7 @@ void DistAutogradContainer::sendReleaseContextRpc(int64_t context_id) {
 }
 
 void DistAutogradContainer::eraseContextIdAndReset(int64_t context_id) {
+  std::cout << "==== erasing context_id " << context_id << std::flush;
   autograd_context_.erase(context_id);
 
   if (current_context_id_ == context_id) {
@@ -176,6 +180,11 @@ void DistAutogradContainer::eraseContextIdAndReset(int64_t context_id) {
 DistAutogradContext& DistAutogradContainer::retrieveContext(
     int64_t context_id) {
   std::lock_guard<std::mutex> guard(autograd_context_lock_);
+  std::cout << "==== retrieving context, fint it? " << (autograd_context_.find(context_id) != autograd_context_.end()) << std::endl << std::flush;
+  std::cout << "=== looping over ids\n" << std::flush;
+  for (auto& entry: autograd_context_) {
+    std::cout << "=== has id " << entry.first << std::endl << std::flush;
+  }
   TORCH_CHECK(
       autograd_context_.find(context_id) != autograd_context_.end(),
       "Could not find autograd context with id: ",
