@@ -8,12 +8,20 @@ namespace distributed {
 namespace rpc {
 
 RRefContext& RRefContext::getInstance() {
-  static RRefContext context(RpcAgent::getDefaultRpcAgent());
-  return context;
+  // Leaky singleton to avoid module destructor races.
+  static RRefContext* context = new RRefContext(RpcAgent::getDefaultRpcAgent());
+  return *context;
 }
 
-void RRefContext::destroyInstance() {
-  RRefContext::getInstance().checkRRefLeaks();
+void RRefContext::destroyInstance(bool checkLeaks) {
+  auto& ctx = RRefContext::getInstance();
+  {
+    std::lock_guard<std::mutex> lock(ctx.mutex_);
+    ctx.destroyed = true;
+  }
+  if (checkLeaks) {
+    RRefContext::getInstance().checkRRefLeaks();
+  }
 }
 
 void RRefContext::handleException(const Message& message) {
