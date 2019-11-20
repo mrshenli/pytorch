@@ -81,7 +81,10 @@ std::shared_ptr<UserRRef<T>> RRefContext::createUserRRef(
   // The reason for not adding the pending user here is to put addPendingUser()
   // close to where the RPC occurs, and it is more clear to pair it with
   // deletePendingUser() in the response callback at the call site.
-  return std::shared_ptr<UserRRef<T>>(new UserRRef<T>(ownerId, rrefId, forkId));
+  auto userRRef =
+      std::shared_ptr<UserRRef<T>>(new UserRRef<T>(ownerId, rrefId, forkId));
+  users_[forkId] = userRRef;
+  return userRRef;
 }
 
 template std::shared_ptr<UserRRef<IValue>> RRefContext::createUserRRef<IValue>(
@@ -274,6 +277,59 @@ void RRefContext::delPendingUser(const ForkId& forkId) {
       iter != pendingUsers_.end(),
       "Inconsistent states: attempt to delete a non-exist UserRRef.");
   pendingUsers_.erase(iter);
+}
+
+void delUser(const ForkId& forkId) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto iter = users_.find(forkId);
+  TORCH_INTERNAL_ASSERT(
+      iter != users_.end(),
+      "Inconsistent states: attempt to delete a non-exist user.");
+
+  if (auto userRRef = iter->second->lock()) {
+    auto fm = agent_->send(
+        agent_->getWorkerInfo(userRRef->owner()),
+        RRefUserDelete(userRRef->rrefId(), forkId).toMessage());
+
+    fm->addCallback(
+        [](const Message& message) { RRefContext::handleException(message); });
+  } else {
+    AT_ERROR("No aliving shared_ptr when deleting UserRRef ", forkId);
+  }
+
+  users_.erase(iter);
+}
+
+void delAllUsers() {
+  std::vector<std::shared_ptr<RRef>> toDelete;
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (auto user: users_) {
+      if (auto userRRef = user->second->lock()) {
+        toDelete.emplace_back(std::move(userRRef));
+      }
+    }
+
+    users_.clear();
+  }
+
+  std::vector<std::shared_ptr<FutureMessage>> fms;
+  fms.reserve(toDelete.size());
+  for (auto& userRRef: toDelete) {
+    auto fm = agent_->send(
+        agent_->getWorkerInfo(userRRef->owner()),
+        RRefUserDelete(userRRef->rrefId(), userRRef->forkId()).toMessage());
+
+    fm->addCallback(
+        [](const Message& message) { RRefContext::handleException(message); });
+    fms.emplace_back(std::move(fm));
+  }
+
+  for (auto& fm: fms) {
+    fm.wait();
+  }
 }
 
 void RRefContext::finishForkRequest(const ForkId& forkId, worker_id_t parent) {
