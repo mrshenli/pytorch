@@ -20,12 +20,39 @@
 #include <torch/csrc/distributed/rpc/script_call.h>
 #include <torch/csrc/distributed/rpc/script_remote_call.h>
 #include <torch/csrc/distributed/rpc/script_resp.h>
+#include <torch/csrc/distributed/rpc/unpickled_python_call.h>
+#include <torch/csrc/distributed/rpc/unpickled_python_remote_call.h>
 #include <torch/csrc/distributed/rpc/utils.h>
 #include <torch/csrc/jit/python/pybind_utils.h>
 
 namespace torch {
 namespace distributed {
 namespace rpc {
+
+namespace {
+
+std::unique_ptr<RpcCommandBase> deserializePythonRpcCommand(
+    std::unique_ptr<RpcCommandBase> rpc,
+    MessageType messageType) {
+  switch(messageType) {
+    case MessageType::PYTHON_CALL: {
+      auto& pc = static_cast<PythonCall&>(*rpc);
+      return std::make_unique<UnpickledPythonCall>(pc.serializedPyObj());
+    }
+    case MessageType::PYTHON_REMOTE_CALL: {
+      auto& prc = static_cast<PythonRemoteCall&>(*rpc);
+      return std::make_unique<UnpickledPythonRemoteCall>(
+          prc.serializedPyObj(),
+          prc.retRRefId(),
+          prc.retForkId());
+    }
+    default: {
+      return rpc;
+    }
+  }
+}
+
+}
 
 using namespace torch::distributed::autograd;
 
@@ -69,15 +96,14 @@ std::shared_ptr<FutureMessage> RequestCallbackImpl::processRpc(
       return wrap(std::move(ScriptResp(std::move(stack.front()))).toMessage());
     }
     case MessageType::PYTHON_CALL: {
-      auto& pyCall = static_cast<PythonCall&>(rpc);
+      auto& upc = static_cast<UnpickledPythonCall&>(rpc);
       auto& pythonRpcHandler = PythonRpcHandler::getInstance();
       std::shared_ptr<SerializedPyObj> serializedPyObj = nullptr;
       {
         pybind11::gil_scoped_acquire ag;
-        auto pythonUdf = pythonRpcHandler.deserialize(pyCall.serializedPyObj());
         serializedPyObj =
             std::make_shared<SerializedPyObj>(pythonRpcHandler.serialize(
-                pythonRpcHandler.runPythonUdf(std::move(pythonUdf))));
+                pythonRpcHandler.runPythonUdf(std::move(upc).movePythonUdf())));
       }
       return wrap(
           std::move(PythonResp(std::move(*serializedPyObj))).toMessage());
@@ -138,10 +164,10 @@ std::shared_ptr<FutureMessage> RequestCallbackImpl::processRpc(
       return wrap(RemoteRet(rrefId, forkId).toMessage());
     }
     case MessageType::PYTHON_REMOTE_CALL: {
-      auto& prc = static_cast<PythonRemoteCall&>(rpc);
+      auto& uprc = static_cast<UnpickledPythonRemoteCall&>(rpc);
 
-      auto rrefId = RRefId::fromIValue(prc.retRRefId());
-      auto forkId = ForkId::fromIValue(prc.retForkId());
+      const auto& rrefId = uprc.rrefId();
+      const auto& forkId = uprc.forkId();
       auto& ctx = RRefContext::getInstance();
 
       auto ownerRRef = ctx.getOrCreateOwnerRRef(rrefId, PyObjectType::get());
@@ -150,9 +176,8 @@ std::shared_ptr<FutureMessage> RequestCallbackImpl::processRpc(
       IValue py_ivalue;
       {
         pybind11::gil_scoped_acquire ag;
-        auto pythonUdf = pythonRpcHandler.deserialize(prc.serializedPyObj());
         py_ivalue = jit::toIValue(
-            PythonRpcHandler::getInstance().runPythonUdf(std::move(pythonUdf)),
+            pythonRpcHandler.runPythonUdf(std::move(uprc).movePythonUdf()),
             PyObjectType::get());
       }
 
@@ -369,7 +394,11 @@ std::shared_ptr<FutureMessage> RequestCallbackImpl::processRpc(
 
 std::shared_ptr<FutureMessage> RequestCallbackImpl::processMessage(
     Message& request) const {
+  auto& rrefContext = RRefContext::getInstance();
+  rrefContext.recordThreadLocalPendingUsers();
   std::unique_ptr<RpcCommandBase> rpc = deserializeRequest(request);
+  rpc = deserializePythonRpcCommand(std::move(rpc), request.type());
+  rrefContext.waitForThreadLocalPendingUsers();
   return processRpc(*rpc, request.type(), request.id());
 }
 

@@ -164,6 +164,14 @@ PyObject* rpc_init(PyObject* /* unused */) {
                   ``RRef``.
               )")
           .def(
+              "is_confirmed",
+              &PyRRef::isConfirmed,
+              R"(
+                  Returns whether this ``RRef`` has been confirmed by the owner.
+                  ``OwnerRRef`` always returns true, while ``UserRRef`` only
+                  returns true when the owner knowns about this ``UserRRef``.
+              )")
+          .def(
               // not releasing GIL here to avoid context switch on getters
               "owner",
               &PyRRef::owner,
