@@ -502,12 +502,30 @@ void RRefContext::recordThreadLocalPendingUsers() {
   recording = true;
 }
 
-void RRefContext::waitForThreadLocalPendingUsers() {
-  for (auto& state : userTable_) {
-    state->future_.wait();
+std::shared_ptr<torch::utils::Future<bool>>
+    RRefContext::waitForThreadLocalPendingUsers() {
+  auto future = std::make_shared<torch::utils::Future<bool>>();
+  if (userTable_.empty()) {
+    future->markCompleted(true);
+  } else {
+    auto remainingRRefs =
+        std::make_shared<std::atomic<uint64_t>>(userTable_.size());
+    for (auto& state : userTable_) {
+      state->future_.addCallback(
+          [future, remainingRRefs] (
+              const bool& /* unused */,
+              const c10::optional<utils::FutureError>& error) {
+            auto localCount = remainingRRefs->fetch_sub(1);
+            if (localCount == 1) {
+              future->markCompleted(true);
+            }
+          }
+      );
+    }
+    userTable_.clear();
   }
-  userTable_.clear();
   recording = false;
+  return future;
 }
 
 void RRefContext::finishForkRequest(const ForkId& forkId, worker_id_t parent) {

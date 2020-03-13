@@ -154,7 +154,7 @@ class TORCH_API RRefContext {
   // Wait until all pending UserRRefs in userTable_ are confirmed by their
   // owners and then clear the userTable_. This is invoked to make sure RRefs
   // in user function args are confirmed before launching user code.
-  void waitForThreadLocalPendingUsers();
+  std::shared_ptr<torch::utils::Future<bool>>  waitForThreadLocalPendingUsers();
 
   void delUser(
       const worker_id_t owner,
