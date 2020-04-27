@@ -36,6 +36,7 @@ struct PythonFunction {
   py::function func_;
 };
 
+
 constexpr std::chrono::milliseconds kDeleteAllUsersTimeout(100000);
 
 template <typename T>
@@ -346,10 +347,14 @@ PyObject* rpc_init(PyObject* /* unused */) {
   // TODO Once python object can be tagged as IValue and c10::ivalue::Future is
   // implemented as generic Future<IValue>, we can consider all rpc call
   // to return a future<IValue> later on.
-  shared_ptr_class_<FutureMessage>(module, "Future")
+  shared_ptr_class_<FuturePyObj>(module, "Future")
       .def(
           "wait",
-          [&](FutureMessage& fut) { return toPyObj(fut.wait()); },
+          [&](FuturePyObj& fut) {
+            const auto& ret = fut.wait();
+            pybind11::gil_scoped_acquire ag;
+            return ret.obj_;
+          },
           py::call_guard<py::gil_scoped_release>(),
           R"(
               Wait on future to complete and return the object it completed
@@ -358,13 +363,13 @@ PyObject* rpc_init(PyObject* /* unused */) {
           )")
       .def(
           "add_done_callback",
-          [&](FutureMessage& fut, py::function cb) {
+          [&](FuturePyObj& fut, py::function cb) {
             // We this an additional layer of wrapper here to guard the
             // destruction of the py::function object. Because, the
             // FutureMessage owns a reference to the py::function in its
             // callback vector, but FutureMessage does acquire GIL.
             PythonFunction pf(std::move(cb));
-            fut.addCallback([pf](const FutureMessage& fut) {
+            fut.addCallback([pf](const FuturePyObj& fut) {
                 pybind11::gil_scoped_acquire ag;
                 pf.func_(fut);
             });
