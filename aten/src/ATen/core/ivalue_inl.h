@@ -335,6 +335,19 @@ struct C10_EXPORT ivalue::Future final : c10::intrusive_ptr_target {
     callbacks_.emplace_back(std::move(callback));
   }
 
+  c10::intrusive_ptr<Future> then(
+      std::function<IValue(void)> callback, TypePtr type) {
+    auto fut = c10::make_intrusive<Future>(type);
+    addCallback([fut, cb{std::move(callback)}]() {
+      try {
+        fut->markCompleted(std::move(cb()));
+      } catch (std::exception& e) {
+        fut->setError(e.what());
+      }
+    });
+    return fut;
+  }
+
   // Check if the current future has completed
   bool completed() const{
     return completed_;

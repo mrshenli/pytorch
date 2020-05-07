@@ -46,6 +46,12 @@
 namespace torch {
 namespace jit {
 
+
+inline IValue toIValue(
+    py::handle obj,
+    const TypePtr& type,
+    c10::optional<int32_t> N = c10::nullopt);
+
 py::object toPyObject(IValue ivalue);
 
 // The PythonFutureWrapper for ivalue::Future
@@ -86,10 +92,63 @@ struct VISIBILITY_HIDDEN PythonFutureWrapper {
     }
   }
 
+  std::shared_ptr<PythonFutureWrapper> then(py::function cb) {
+    // We need this an additional layer of wrapper here to guard the
+    // destruction of the py::function object. Because, the
+    // Future owns a reference to the py::function in its callback
+    // vector, but Future does not acquire GIL on destruction.
+    auto pf = std::make_shared<PythonFunction>(std::move(cb));
+    return std::make_shared<jit::PythonFutureWrapper>(fut->then(
+        [this, pf]() -> IValue {
+          if (this->fut->hasError()) {
+            throw std::runtime_error(c10::str(
+                "Parent Future reported error: ",
+                (*(this->fut->error())).what()));
+          }
+
+          try {
+            pybind11::gil_scoped_acquire ag;
+            return toIValue(pf->func_(*this), PyObjectType::get());
+          } catch (py::error_already_set& e) {
+            auto err = std::runtime_error(c10::str(
+                "Got the following error when running the callback: ",
+                e.what()));
+            {
+              pybind11::gil_scoped_acquire ag;
+              // Release ownership on py::objects and also restore Python
+              // Error Indicator.
+              e.restore();
+              // Clear the Python Error Indicator as we has recorded the
+              // exception in the response message.
+              PyErr_Clear();
+            }
+
+            throw err;
+          } catch (...) {
+            throw std::runtime_error("Unknown error when running callback");
+          }
+        },
+        PyObjectType::get()));
+  }
+
   c10::intrusive_ptr<c10::ivalue::Future> fut;
   // unwrap_func works like a callback for the value returned by
   // PythonFutureWrapper::wait().
   c10::optional<UnwrapFunc> unwrap_func;
+
+  private:
+    // Wrap Python function to guard deref
+    struct PythonFunction {
+      explicit PythonFunction(py::function func) : func_(std::move(func)) {}
+
+      ~PythonFunction() {
+        pybind11::gil_scoped_acquire ag;
+        func_ = py::none();
+      }
+
+      py::function func_;
+    };
+
 };
 
 // error reporting: when reporting user-caused errors, these functions should
@@ -336,11 +395,6 @@ inline InferredType tryToInferContainerType(py::handle input) {
         "."));
   }
 }
-
-inline IValue toIValue(
-    py::handle obj,
-    const TypePtr& type,
-    c10::optional<int32_t> N = c10::nullopt);
 
 inline bool isTraceableType(TypePtr type) {
   if (type->isSubtypeOf(TensorType::get())) {

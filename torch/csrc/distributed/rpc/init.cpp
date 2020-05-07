@@ -15,6 +15,7 @@
 #include <torch/types.h>
 
 #include <pybind11/chrono.h>
+#include <pybind11/functional.h>
 #include <pybind11/operators.h>
 
 namespace torch {
