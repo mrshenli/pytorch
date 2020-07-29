@@ -83,7 +83,7 @@ def _require_initialized(func):
     return wrapper
 
 
-class WaitAllWorkersStates(object):
+class AllGatherStates(object):
     def __init__(self):
         # Each `intent_worker_names` is an empty set at beginning.
         # It's only used by leader worker. Leader worker is user-specified or
@@ -93,52 +93,51 @@ class WaitAllWorkersStates(object):
         # The leader also adds itself's name to the set on calling
         # `_wait_all_workers()`. We need this because, we confine `_wait_all_workers()`
         # to be called only once, by examing if leader's name has been added to the set.
-        self.intent_worker_names = set()
+        self.gathered_objects = {}
         # Once `intent_worker_names == _ALL_WORKER_NAMES`,
         # we flip `_SHUTDOWN_PROCEED_SIGNAL` on the leader, and leader will send RPCs
         # to follower workers to flip their `_SHUTDOWN_PROCEED_SIGNAL`s.
-        self.proceed_signal = threading.Event()
+        self.results_future = torch.futures.Future()
 
 
 # States used by `def _wait_all_workers()`.
 # `_ALL_WORKER_NAMES` is initialized on initiaizing RPC layer.
 _ALL_WORKER_NAMES = None
-_wait_all_workers_dict_lock = threading.RLock()
-_wait_all_workers_sequence_id = 0
-_wait_all_workers_sequence_id_to_states = collections.defaultdict(WaitAllWorkersStates)
+_all_gather_dict_lock = threading.RLock()
+_all_gather_sequence_id = 0
+_all_gather_sequence_id_to_states = collections.defaultdict(AllGatherStates)
 
 
-def _on_leader_follower_report_shutdown_intent(sequence_id, worker_name):
-    with _wait_all_workers_dict_lock:
+def _gather_to_leader(sequence_id, worker_name, obj):
+    with _all_gather_dict_lock:
         assert (
             worker_name in _ALL_WORKER_NAMES
         ), "{worker_name} is not expected by leader.".format(worker_name=worker_name)
-        intent_worker_names = _wait_all_workers_sequence_id_to_states[
-            sequence_id
-        ].intent_worker_names
+        states = _all_gather_sequence_id_to_states[sequence_id]
+        gathered_worker_names = set(states.gathered_objects.keys())
         assert (
-            worker_name not in intent_worker_names
+            worker_name not in gathered_worker_names
         ), "{worker_name} reported intent sequence id {sequence_id} twice. ".format(
             worker_name=worker_name, sequence_id=sequence_id
         )
-        intent_worker_names.add(worker_name)
-        if _ALL_WORKER_NAMES == intent_worker_names:
-            _set_proceed_shutdown_signal(sequence_id)
+        gathered_objects[worker_name] = obj
+        if _ALL_WORKER_NAMES == gathered_worker_names:
+            states.results_future.set_result(states.gathered_objects)
 
 
-def _set_proceed_shutdown_signal(sequence_id):
-    with _wait_all_workers_dict_lock:
-        proceed_signal = _wait_all_workers_sequence_id_to_states[
+def _broadcast_to_followers(sequence_id, objs_map):
+    with _all_gather_dict_lock:
+        results_future = _all_gather_sequence_id_to_states[
             sequence_id
-        ].proceed_signal
+        ].results_future
     assert (
-        not proceed_signal.is_set()
+        not results_future.done()
     ), "Termination signal sequence id {} got set twice.".format(sequence_id)
-    proceed_signal.set()
+    results_future.set_result(objs_map)
 
 
 @_require_initialized
-def _wait_all_workers():
+def _all_gather(obj):
     r"""
     Block until all local and remote RPC processes reach this method and wait
     for all outstanding work to complete. Every RPC process must call this
@@ -149,14 +148,80 @@ def _wait_all_workers():
     assert (
         _ALL_WORKER_NAMES is not None
     ), "`_ALL_WORKER_NAMES` is not initialized for `def _wait_all_workers`."
+    leader_name = sorted(_ALL_WORKER_NAMES)[0]
+
+    self_name = _get_current_rpc_agent().get_worker_info().name
+
+    global _all_gather_sequence_id
+    with _all_gather_dict_lock:
+        sequence_id = _all_gather_sequence_id
+        _all_gather_sequence_id += 1
+
+    is_leader = leader_name == self_name
+    # Set a long enough timeout for all shutdown messages to be processed.
+    timeout = 5  # second
+
+    # Phase 1: Followers send intents.
+    # All followers report intents to the leader.
+    if is_leader:
+        _gather_to_leader(sequence_id, self_name, obj)
+    else:
+        rpc_sync(
+            leader_name,
+            _gather_to_leader,
+            args=(sequence_id, self_name, obj),
+            timeout=timeout,
+        )
+
+    with _all_gather_dict_lock:
+        states = _all_gather_sequence_id_to_states[
+            sequence_id
+        ]
+    states.results_future.wait()
+
+    # Phase 2: Leader asks followers to proceed.
+    # Leader's signal is the first to be unblocked,
+    # after receiving all followers' intents.
+    if is_leader_worker:
+        # The leader sends out proceeed signals to all followers.
+        worker_name_to_response_future_dict = dict()
+        for follower_name in _ALL_WORKER_NAMES - {leader_name}:
+            fut = rpc_async(
+                follower_name,
+                _broadcast_to_followers,
+                args=(sequence_id, states.gathered_objects),
+                timeout=timeout
+            )
+            worker_name_to_response_future_dict[follower_name] = fut
+        for follower_name, fut in worker_name_to_response_future_dict.items():
+            try:
+                fut.wait()
+            except RuntimeError as ex:
+                logger.error(
+                    "{worker_name} failed to respond to 'Shutdown Proceed.' request in {timeout}".format(
+                        worker_name=follower_name, timeout=timeout
+                    )
+                )
+
+
+@_require_initialized
+def _wait_all_workers():
+    _all_gather(None)
+
+"""
+@_require_initialized
+def _wait_all_workers():
+    assert (
+        _ALL_WORKER_NAMES is not None
+    ), "`_ALL_WORKER_NAMES` is not initialized for `def _wait_all_workers`."
     leader_worker_name = sorted(_ALL_WORKER_NAMES)[0]
 
     self_worker_name = _get_current_rpc_agent().get_worker_info().name
 
-    global _wait_all_workers_sequence_id
-    with _wait_all_workers_dict_lock:
-        sequence_id = _wait_all_workers_sequence_id
-        _wait_all_workers_sequence_id += 1
+    global _all_gather_sequence_id
+    with _all_gather_dict_lock:
+        sequence_id = _all_gather_sequence_id
+        _all_gather_sequence_id += 1
 
     is_leader_worker = leader_worker_name == self_worker_name
     # Set a long enough timeout for all shutdown messages to be processed.
@@ -174,8 +239,8 @@ def _wait_all_workers():
             timeout=timeout,
         )
 
-    with _wait_all_workers_dict_lock:
-        proceed_signal = _wait_all_workers_sequence_id_to_states[
+    with _all_gather_dict_lock:
+        proceed_signal = _all_gather_sequence_id_to_states[
             sequence_id
         ].proceed_signal
     proceed_signal.wait()
@@ -199,7 +264,7 @@ def _wait_all_workers():
                         worker_name=follower_worker_name, timeout=timeout
                     )
                 )
-
+"""
 
 @_require_initialized
 def shutdown(graceful=True):
