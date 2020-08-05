@@ -72,7 +72,7 @@ struct TensorPipeRpcBackendOptions : public RpcBackendOptions {
 
   void setMapLocation(
       const std::string& workerName,
-      const std::unordered_map<int, int>& mapLocation) {
+      const std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>& mapLocation) {
     auto iter = mapLocations.find(workerName);
     if (iter == mapLocations.end()) {
       mapLocations[workerName] = mapLocation;
@@ -86,7 +86,9 @@ struct TensorPipeRpcBackendOptions : public RpcBackendOptions {
   int numWorkerThreads;
   const optional<std::vector<std::string>> transports;
   const optional<std::vector<std::string>> channels;
-  std::unordered_map<std::string, std::unordered_map<int, int>> mapLocations;
+  std::unordered_map<
+      std::string,
+      std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>> mapLocations;
 };
 
 // Struct to track the network source metrics
@@ -137,6 +139,11 @@ class TensorPipeAgent : public RpcAgent {
   const WorkerInfo& getWorkerInfo(const std::string& workerName) const override;
   const WorkerInfo& getWorkerInfo(worker_id_t workerId) const override;
   std::vector<WorkerInfo> getWorkerInfos() const override;
+  inline void setReverseMapLocations(const std::unordered_map<
+      std::string,
+      std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>>& reverseMapLocations) {
+    reverseMapLocations_ = std::move(reverseMapLocations);
+  }
 
   std::unordered_map<std::string, std::string> getMetrics() override;
 
@@ -226,6 +233,9 @@ class TensorPipeAgent : public RpcAgent {
   };
 
   const TensorPipeRpcBackendOptions opts_;
+  std::unordered_map<
+      std::string,
+      std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>> reverseMapLocations_;
 
   ThreadPool threadPool_;
   std::shared_ptr<tensorpipe::Context> context_;

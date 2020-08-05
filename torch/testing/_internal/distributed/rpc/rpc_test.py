@@ -3804,8 +3804,8 @@ class TensorPipeAgentRpcTest(TensorPipeRpcAgentTestFixture, RpcTest):
                 rpc_timeout=timeout,
             )
 
-    def _test_map_locations(self, options):
-        with self.assertRaisesRegex(ValueError, "Invalid map_location"):
+    def _test_map_locations(self, options, errMsg="Invalid map_location"):
+        with self.assertRaisesRegex(ValueError, errMsg):
             rpc.init_rpc(
                 name=worker_name(self.rank),
                 backend=self.rpc_backend,
@@ -3820,7 +3820,7 @@ class TensorPipeAgentRpcTest(TensorPipeRpcAgentTestFixture, RpcTest):
     def test_map_locations_wrong_worker_name(self):
         options = self.rpc_backend_options
         options.set_map_location("none_exist", {-1: 0})
-        self._test_map_locations(options)
+        self._test_map_locations(options, "Wrong worker names")
 
     def test_map_locations_invalid_max_local_device(self):
         options = self.rpc_backend_options
@@ -3860,3 +3860,54 @@ class TensorPipeAgentRpcTest(TensorPipeRpcAgentTestFixture, RpcTest):
         options.set_map_location(dst, {0: 0})
 
         self._test_map_locations(options)
+
+    def test_map_locations_cpu(self):
+        options = self.rpc_backend_options
+        dst = worker_name((self.rank + 1) % self.world_size)
+        options.set_map_location(dst, {-1: -1})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        ret = rpc.rpc_sync(dst, torch.add, args=(torch.zeros(2), torch.ones(2)))
+        self.assertEqual(ret, torch.zeros(2) + torch.ones(2))
+
+        rpc.shutdown()
+
+    @staticmethod
+    def _gpu_add(x, y):
+        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
+            ret =  (x + y).to(1)
+            print("--- remote ret is ", ret)
+            return ret
+        else:
+            raise ValueError("Wrong device affinity")
+
+    @skip_if_lt_x_gpu(2)
+    def test_map_locations_gpu(self):
+        options = self.rpc_backend_options
+        dst = worker_name((self.rank + 1) % self.world_size)
+        options.set_map_location(dst, {-1: 0})
+        options.set_map_location(dst, {0: 1})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        if self.rank == 0:
+            fn = TensorPipeAgentRpcTest._gpu_add
+            ret = rpc.rpc_sync(dst, fn, args=(torch.zeros(2), torch.ones(2)))
+            print("=== ret is ", ret)
+            self.assertEqual(ret, (torch.zeros(2) + torch.ones(2)).to(0))
+        rpc.shutdown()
+
+

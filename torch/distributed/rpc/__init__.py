@@ -98,13 +98,11 @@ if is_available():
         # Initialize RPC.
         api._init_rpc_backend(backend, store, name, rank, world_size, rpc_backend_options)
 
-        failed_workers = api._check_map_locations(rpc_backend_options.map_locations)
-        if failed_workers:
+        try:
+            api._setup_map_locations(rpc_backend_options.map_locations)
+        except:
             api.shutdown()
-            raise ValueError(
-                "Invalid map_location configuration on workers "
-                f"{failed_workers}. All RPC workers are shutdown()."
-            )
+            raise
 
 
     @api._require_initialized

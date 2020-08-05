@@ -55,6 +55,15 @@ void processRemoteProfiledEvents(
   // Add event list to the thread local profiler.
   torch::autograd::profiler::addEventList(std::move(events));
 }
+
+inline c10::Device indexToDevice(c10::DeviceIndex index) {
+  if (index == -1) {
+    return c10::Device(at::kCPU);
+  } else {
+    return c10::Device(at::kCUDA, index);
+  }
+}
+
 } // namespace
 
 const std::string kRPCErrorPrefix = std::string("RPCErr");
@@ -465,22 +474,27 @@ constexpr int kTpMessageTypeIdx = 0;
 constexpr int kTpMessageIdIdx = 1;
 // Then comes the rpc::Message::payload();
 constexpr int kTpMessagePayloadIdx = 2;
+// Then comes the destination device indices for all tensors in the message.
+constexpr int kTpMessageDevicesIdx = 3;
 // Last comes the pickle of rpc::Message::tensors() (with the tensors themselves
 // stored as, well, tensors in the tensorpipe::Message).
-constexpr int kTpMessagePickleIdx = 3;
+constexpr int kTpMessagePickleIdx = 4;
 
 } // namespace
 
 std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
-    Message&& rpcMessage) {
+    Message&& rpcMessage,
+    const std::vector<c10::DeviceIndex> deviceIndices) {
   tensorpipe::Message tpMessage;
   TensorpipeWriteBuffers buffers;
 
   // Metadata
   buffers.type = std::make_unique<MessageType>(rpcMessage.type());
   buffers.id = std::make_unique<int64_t>(rpcMessage.id());
+  // kTpMessageTypeIdx = 0
   tpMessage.payloads.push_back(
       tensorpipe::Message::Payload{buffers.type.get(), sizeof(MessageType)});
+  // kTpMessageIdIdx = 1
   tpMessage.payloads.push_back(
       tensorpipe::Message::Payload{buffers.id.get(), sizeof(int64_t)});
 
@@ -490,8 +504,16 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
   // it uses non-const pointers even though it doesn't modify them when writing.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   char* payloadPtr = const_cast<char*>(buffers.payload.data());
+  // kTpMessagePayloadIdx = 2
   tpMessage.payloads.push_back(
       tensorpipe::Message::Payload{payloadPtr, buffers.payload.size()});
+
+  // Device indices
+  buffers.deviceIndices = std::move(deviceIndices);
+  auto indicesPtr = const_cast<c10::DeviceIndex*>(buffers.deviceIndices.data());
+  auto size = buffers.deviceIndices.size() * sizeof(c10::DeviceIndex);
+  // kTpMessageDevicesIdx = 3
+  tpMessage.payloads.push_back(tensorpipe::Message::Payload{indicesPtr, size});
 
   // Tensors
   buffers.tensors = cloneSparseTensors(rpcMessage.tensors()).vec();
@@ -505,6 +527,7 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
   pickler.protocol();
   pickler.pushIValue(buffers.tensors);
   pickler.stop();
+  // kTpMessagePickleIdx = 4
   tpMessage.payloads.push_back(tensorpipe::Message::Payload{
       buffers.pickle.data(), buffers.pickle.size()});
   for (const auto& tensor : pickler.tensorData()) {
@@ -534,8 +557,8 @@ TensorpipeReadBuffers tensorpipeAllocate(tensorpipe::Message& tpMessage) {
   TensorpipeReadBuffers buffers;
 
   TORCH_INTERNAL_ASSERT(
-      tpMessage.payloads.size() == 4,
-      "message expected to contain 4 payloads, whereas it contained ",
+      tpMessage.payloads.size() == 5,
+      "message expected to contain 5 payloads, whereas it contained ",
       tpMessage.payloads.size(),
       " payloads");
 
@@ -563,6 +586,18 @@ TensorpipeReadBuffers tensorpipeAllocate(tensorpipe::Message& tpMessage) {
 
   buffers.payload.resize(tpMessage.payloads[kTpMessagePayloadIdx].length);
   tpMessage.payloads[kTpMessagePayloadIdx].data = buffers.payload.data();
+
+  auto deviceIndexSize = sizeof(c10::DeviceIndex);
+  TORCH_INTERNAL_ASSERT(
+      tpMessage.payloads[kTpMessageDevicesIdx].length % deviceIndexSize == 0,
+      "Invalid number of bytes for device index payload, total bytes: ",
+      tpMessage.payloads[kTpMessageDevicesIdx].length,
+      ", device index size: ",
+      deviceIndexSize
+  );
+  buffers.deviceIndices.resize(
+      tpMessage.payloads[kTpMessageDevicesIdx].length / deviceIndexSize);
+  tpMessage.payloads[kTpMessageDevicesIdx].data = buffers.deviceIndices.data();
 
   buffers.pickle.resize(tpMessage.payloads[kTpMessagePickleIdx].length);
   tpMessage.payloads[kTpMessagePickleIdx].data = buffers.pickle.data();
@@ -604,6 +639,13 @@ Message tensorpipeDeserialize(
   auto ival = unpickler.parse_ivalue();
   for (auto&& t : ival.toTensorList()) {
     tensors.emplace_back(std::move(t));
+  }
+
+  for (size_t i = {}; i < tensors.size(); ++i) {
+    std::cout << "++ device index is " << buffers.deviceIndices[i] << std::endl << std::flush;
+    std::cout << "--- before to: " << tensors[i] << std::endl << std::flush;
+    tensors[i] = tensors[i].to(indexToDevice(buffers.deviceIndices[i]));
+    std::cout << "--- after to: " << tensors[i] << std::endl << std::flush;
   }
 
   return Message(

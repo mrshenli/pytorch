@@ -29,6 +29,35 @@ const std::string kServerActiveAsyncCalls = "agent.server_active_async_calls";
 const std::string kRpcTimeoutErrorStr =
     "RPC ran for more than set timeout ({} ms) and will now be marked with an error";
 
+std::vector<c10::DeviceIndex> mapTensorDevices(
+    const std::string& remoteName,
+    const std::vector<torch::Tensor>& tensors,
+    const std::unordered_map<
+        std::string,
+        std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>>& mapLocations) {
+
+  const auto workerIter = mapLocations.find(remoteName);
+  if (workerIter == mapLocations.end()) {
+    return {};
+  } else {
+    std::vector<c10::DeviceIndex> deviceIndices;
+    deviceIndices.reserve(tensors.size());
+    const auto& mapLocation = workerIter->second;
+    for (const auto& tensor : tensors) {
+      const auto deviceIter = mapLocation.find(tensor.device().index());
+      if (deviceIter == mapLocation.end()) {
+        TORCH_CHECK(tensor.device() == at::kCPU, "");
+        std::cout << "==== cpu device index is " << tensor.device().index() << std::endl << std::flush;
+        deviceIndices.push_back(-1);
+      } else {
+        std::cout << "==== cpu device index is " << tensor.device().index() << std::endl << std::flush;
+        deviceIndices.push_back(deviceIter->second);
+      }
+    }
+    return deviceIndices;
+  }
+}
+
 } // namespace
 
 C10_DEFINE_REGISTRY(TensorPipeTransportRegistry, TransportRegistration);
@@ -392,7 +421,13 @@ void TensorPipeAgent::pipeWrite(
     std::function<void(const tensorpipe::Error&)> fn) {
   tensorpipe::Message tpMessage;
   TensorpipeWriteBuffers tpBuffers;
-  std::tie(tpMessage, tpBuffers) = tensorpipeSerialize(std::move(rpcMessage));
+
+  const auto& mapLocations =
+      rpcMessage.isRequest() ? opts_.mapLocations : reverseMapLocations_;
+  std::tie(tpMessage, tpBuffers) = tensorpipeSerialize(
+      std::move(rpcMessage),
+      mapTensorDevices(pipe->getRemoteName(), rpcMessage.tensors(), mapLocations));
+
   pipe->write(
       std::move(tpMessage),
       [tpBuffers{
@@ -423,16 +458,41 @@ void TensorPipeAgent::sendCompletedResponseMessage(
   Message&& responseMessage = std::move(*futureResponseMessage).moveValue();
   responseMessage.setId(messageId);
   if (!error) {
-    for (const auto& tensor : responseMessage.tensors()) {
-      if (!tensor.device().is_cpu()) {
-        responseMessage = createExceptionResponse(
-            c10::str(
-                "TensorPipe RPC backend only supports CPU tensors, please ",
-                "move your tensors to CPU before sending them over RPC. Found ",
-                "tensor on device: ",
-                tensor.device()),
-            responseMessage.id());
-        break;
+    const auto& iter = reverseMapLocations_.find(pipe->getRemoteName());
+    if (iter == opts_.mapLocations.end()) {
+      for (const auto& t : responseMessage.tensors()) {
+        if (!t.device().is_cpu()) {
+          responseMessage = createExceptionResponse(
+              c10::str(
+                  "TensorPipe RPC backend only supports CPU tensors by default,"
+                  " please move your tensors to CPU before sending them over "
+                  "RPC, or call `set_map_location` on "
+                  "`TensorPipeRpcBackendOptions` to explicitly configure "
+                  "device mapping. Response device mapping is not available for "
+                  "destination ",
+                  pipe->getRemoteName(),
+                  ", but found tensor on device: ",
+                  t.device()),
+              responseMessage.id());
+          break;
+        }
+      }
+    } else {
+      const auto& mapLocation = iter->second;
+      for (const auto& t : responseMessage.tensors()) {
+        if (!t.device().is_cpu() &&
+                mapLocation.find(t.device().index()) == mapLocation.end()) {
+          responseMessage = createExceptionResponse(
+              c10::str(
+                  "TensorPipe RPC backend only supports CPU tensors by default."
+                  " Response device mapping is not available for destination ",
+                  pipe->getRemoteName(),
+                  " for device ",
+                  t.device(),
+                  " but received a tensor on that device."),
+              responseMessage.id());
+          break;
+        }
       }
     }
 
@@ -566,12 +626,33 @@ std::shared_ptr<FutureMessage> TensorPipeAgent::send(
     throw std::runtime_error(err);
   }
 
-  for (const auto& tensor : requestMessage.tensors()) {
-    TORCH_CHECK(
-        tensor.device().is_cpu(),
-        "TensorPipe RPC backend only supports CPU tensors, please move your ",
-        "tensors to CPU before sending them over RPC. Found tensor on device: ",
-        tensor.device());
+  const auto& iter = opts_.mapLocations.find(toWorkerInfo.name_);
+  if (iter == opts_.mapLocations.end()) {
+    for (const auto& tensor : requestMessage.tensors()) {
+      TORCH_CHECK(
+          tensor.device().is_cpu(),
+          "TensorPipe RPC backend only supports CPU tensors by default, please "
+          "move your tensors to CPU before sending them over RPC, or call "
+          "`set_map_location` on `TensorPipeRpcBackendOptions` to explicitly "
+          "configure device mapping. Device mapping is not available for "
+          "destination ",
+          toWorkerInfo.name_,
+          ", but found tensor on device: ",
+          tensor.device());
+    }
+  } else {
+    const auto& mapLocation = iter->second;
+    for (const auto& tensor : requestMessage.tensors()) {
+      TORCH_CHECK(
+          tensor.device().is_cpu() ||
+              mapLocation.find(tensor.device().index()) != mapLocation.end(),
+          "TensorPipe RPC backend only supports CPU tensors by default. Device "
+          "mapping is not available for destination ",
+          toWorkerInfo.name_,
+          " for device ",
+          tensor.device(),
+          " but received a tensor on that device.");
+    }
   }
 
   const auto& url = findWorkerURL(toWorkerInfo);
