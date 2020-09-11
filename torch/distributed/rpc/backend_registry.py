@@ -220,6 +220,7 @@ def _tensorpipe_check_device_maps(agent, device_maps):
                 remote_device_map[k]: k for k in remote_device_map
             }
 
+    print("==== reverse_device_map is ", reverse_device_maps)
     agent._set_reverse_device_maps(reverse_device_maps)
 
 
