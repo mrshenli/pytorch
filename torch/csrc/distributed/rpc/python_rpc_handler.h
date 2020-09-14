@@ -24,6 +24,11 @@ class PYBIND11_EXPORT PythonRpcHandler {
     py::object remote_;
   };
 
+  struct RRefTypeFunctions {
+    py::object onOwner_;
+    py::object onUser_;
+  };
+
   static PythonRpcHandler& getInstance();
 
   // Run a pickled Python UDF and return the result py::object
@@ -72,6 +77,8 @@ class PYBIND11_EXPORT PythonRpcHandler {
 
   const RRefProxyFunctions& getRRefProxyFunctions() const;
 
+  const RRefTypeFunctions& getRRefTypeFunctions() const;
+
  private:
   void init();
   PythonRpcHandler();
@@ -94,7 +101,11 @@ class PYBIND11_EXPORT PythonRpcHandler {
   // Ref to 'torch.distributed.rpc.internal._handle_exception'
   py::object pyHandleException_;
 
+  // Python functions for RRef proxy
   RRefProxyFunctions rrefProxyFunctions_;
+
+  // Ref to 'torch.distributed.rpc.api._rref_typeof_on_'
+  RRefTypeFunctions rrefTypeFunctions_;
 
   // Shared ptr to python compilation unit in jit, it is constructed in python
   // side (see _python_cu = torch._C.CompilationUnit() in jit/__init__.py)

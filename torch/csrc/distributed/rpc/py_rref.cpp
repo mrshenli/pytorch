@@ -237,6 +237,19 @@ py::object PyRRef::createRRefProxy(const RRefProxyType& type) const {
   }
 }
 
+py::object PyRRef::getRRefType() {
+  if (!type_.has_value()) {
+    pybind11::gil_scoped_release release;
+    auto& pythonRpcHandler = PythonRpcHandler::getInstance();
+    auto& typeFuncs = pythonRpcHandler.getRRefTypeFunctions();
+    std::cout << "===== c++ before" << std::endl << std::flush;
+    type_ = isOwner() ? typeFuncs.onOwner_() : typeFuncs.onUser_();
+    std::cout << "===== c++ after" << std::endl << std::flush;
+  }
+
+  return *type_;
+}
+
 py::tuple PyRRef::pickle() const {
   auto& ctx = RRefContext::getInstance();
   auto rrefForkData = ctx.prepareChildFork(rref_);

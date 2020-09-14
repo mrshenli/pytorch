@@ -342,6 +342,11 @@ PyObject* rpc_init(PyObject* /* unused */) {
               &PyRRef::unpickle,
               py::call_guard<py::gil_scoped_release>())
           .def(
+              "_get_type",
+              // Intentionally not releasing GIL, as most accesses just
+              // retrieve cached type py::object
+              &PyRRef::getRRefType)
+          .def(
               "_get_future",
               [](const PyRRef& self) {
                 return std::make_shared<jit::PythonFutureWrapper>(

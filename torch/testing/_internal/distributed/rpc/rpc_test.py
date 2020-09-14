@@ -2973,6 +2973,15 @@ class RpcTest(RpcAgentTestFixture):
             RPCExecMode.REMOTE
         )
 
+    @dist_init
+    def test_async_class_rref_proxy(self):
+        dst1 = worker_name((self.rank + 1) % self.world_size)
+        dst2 = worker_name((self.rank + 2) % self.world_size)
+        rref = rpc.remote(dst1, AsyncExecutionClass)
+        x = torch.ones(2, 2)
+        ret = rref.rpc_sync().static_async_add(dst2, x, x, x)
+        self.assertEqual(ret, x)
+
     def _test_async_function_multi(self, fn, mode=RPCExecMode.SYNC):
         dst1 = worker_name((self.rank + 1) % self.world_size)
         dst2 = worker_name((self.rank + 2) % self.world_size)
