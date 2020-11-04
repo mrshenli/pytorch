@@ -7,6 +7,7 @@
 #ifdef USE_CUDA
 #include <c10/cuda/CUDAFunctions.h>
 #include <c10/cuda/CUDAStream.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 #endif
 
 namespace tensorpipe {
@@ -49,6 +50,25 @@ struct DevicesContext {
 
   inline const std::vector<CUDAStream>& streams() const {
     return streams_;
+  }
+
+  inline void recordDataPtrs(const std::vector<c10::DataPtr>& dataPtrs) const {
+    for (const auto& dataPtr: dataPtrs) {
+      if (dataPtr.device().is_cuda()) {
+        c10::cuda::CUDACachingAllocator::recordStream(
+            dataPtr, streams_[dataPtr.device().index()]);
+      }
+    }
+  }
+
+  inline void recordTensors(const std::vector<torch::Tensor>& tensors) const {
+    for (const auto& tensor: tensors) {
+      const auto& dataPtr = tensor.storage().data_ptr();
+      if (dataPtr.device().is_cuda()) {
+        c10::cuda::CUDACachingAllocator::recordStream(
+            dataPtr, streams_[dataPtr.device().index()]);
+      }
+    }
   }
 
  private:

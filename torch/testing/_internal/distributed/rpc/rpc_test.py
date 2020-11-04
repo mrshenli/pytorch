@@ -4568,17 +4568,19 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         rpc.shutdown()
 
     @staticmethod
-    def _gpu_add_multi_gpu(x, y):
-        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 1]):
-            return x + y.to(0), x.to(1) - y
+    def _gpu_add_default_gpu(x, y):
+        print("======================== !!!! in user function")
+        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
+            return x + y
         else:
             raise ValueError("Wrong device affinity")
 
-    def _test_device_maps_multi_gpu(self, dst):
+    @skip_if_lt_x_gpu(2)
+    def test_device_maps_default_gpu(self):
         torch.zeros(2).to(0).to(1)
         options = self.rpc_backend_options
-        options.set_device_map(dst, {1: 0})
-        options.set_device_map(dst, {0: 1})
+        dst = worker_name((self.rank + 1) % self.world_size)
+        options.set_device_map(dst, {0: 0})
 
         rpc.init_rpc(
             name=worker_name(self.rank),
@@ -4588,15 +4590,48 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
-        rets = rpc.rpc_sync(
+        ret = rpc.rpc_sync(
             dst,
-            TensorPipeAgentRpcTest._gpu_add_multi_gpu,
-            args=(torch.zeros(2).to(1), torch.ones(2).to(0))
+            TensorPipeAgentRpcTest._gpu_add_default_gpu,
+            args=(torch.zeros(2).to(0), torch.ones(2).to(0))
         )
-        self.assertEqual(rets[0].device, torch.device(1))
-        self.assertEqual(rets[1].device, torch.device(0))
-        self.assertEqual(rets[0], (torch.zeros(2) + torch.ones(2)).to(1))
-        self.assertEqual(rets[1], (torch.zeros(2) - torch.ones(2)).to(0))
+        print("=========== !!!!! got response")
+        #self.assertEqual(ret.device, torch.device(0))
+        #self.assertEqual(ret, (torch.zeros(2) + torch.ones(2)).to(0))
+        rpc.shutdown()
+
+    @staticmethod
+    def _gpu_add_multi_gpu(x, y):
+        print("==== in user function!!!!!")
+        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
+            return x + y.to(0), x.to(0) - y
+        else:
+            raise ValueError("Wrong device affinity")
+
+    def _test_device_maps_multi_gpu(self, dst):
+        torch.zeros(2).to(0).to(1)
+        options = self.rpc_backend_options
+        options.set_device_map(dst, {0: 0})
+        #options.set_device_map(dst, {1: 1})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        if self.rank == 0:
+            rets = rpc.rpc_sync(
+                dst,
+                TensorPipeAgentRpcTest._gpu_add_multi_gpu,
+                args=(torch.zeros(2).to(0), torch.ones(2).to(0))
+            )
+            #self.assertEqual(rets[0].device, torch.device(1))
+            #self.assertEqual(rets[1].device, torch.device(0))
+            #self.assertEqual(rets[0], (torch.zeros(2) + torch.ones(2)).to(1))
+            #self.assertEqual(rets[1], (torch.zeros(2) - torch.ones(2)).to(0))
         rpc.shutdown()
 
     @skip_if_lt_x_gpu(2)

@@ -398,7 +398,7 @@ void TensorPipeAgent::pipeRead(
     DevicesContext ctx(reverseDeviceMaps_.empty() && opts_.deviceMaps.empty());
 
     if (error) {
-      std::cout << "=== got error in pipeRead\n" << std::flush;
+      std::cout << "=== got error in pipeRead from " << pipe->getRemoteName() << " to " << workerInfo_.name_ << std::endl << std::flush;
       fn(error, Message(), std::move(ctx));
       return;
     }
@@ -409,7 +409,7 @@ void TensorPipeAgent::pipeRead(
 
     pipe->read(
         std::move(tpMessage),
-        [tpBuffers{
+        [this, tpBuffers{
              std::make_shared<TensorpipeReadBuffers>(std::move(tpBuffers))},
          fn{std::move(fn)},
          ctx{std::move(ctx)}](
@@ -426,6 +426,12 @@ void TensorPipeAgent::pipeRead(
           Message rpcMessage = tensorpipeDeserialize(
               std::move(tpMessage), std::move(*tpBuffers));
 
+          if (rpcMessage.tensors().size() > 0 && rpcMessage.tensors()[0].device().is_cuda()) {
+            std::cout << "==== successfully read cuda tensors on " << workerInfo_.name_ << std::endl << std::flush;
+          }
+
+          ctx.recordDataPtrs(tpBuffers->tensors);
+
           fn(error, std::move(rpcMessage), std::move(ctx));
         });
   });
@@ -440,21 +446,31 @@ void TensorPipeAgent::pipeWrite(
   tensorpipe::Message tpMessage;
   TensorpipeWriteBuffers tpBuffers;
 
+  bool is_cuda = rpcMessage.tensors().size() > 0 ? rpcMessage.tensors()[0].device().is_cuda() : false;
+
   std::tie(tpMessage, tpBuffers) = tensorpipeSerialize(
       std::move(rpcMessage), std::move(devices), ctx);
 
-  std::cout << "before pipe write\n" << std::flush;
+  std::cout << "before pipe write is_cuda? " << is_cuda << " on " << workerInfo_.name_ << std::endl << std::flush;
   pipe->write(
       std::move(tpMessage),
       [tpBuffers{
            std::make_shared<TensorpipeWriteBuffers>(std::move(tpBuffers))},
        fn{std::move(fn)},
-       ctx{std::move(ctx)}](
+       ctx{std::move(ctx)},
+       is_cuda,
+       this](
           const tensorpipe::Error& error, tensorpipe::Message /* unused */) {
-        std::cout << "=== in pipeWrite cb\n" << std::flush;
+        if (is_cuda) {
+          std::cout << "=============== tensorpipe did call cb for cuda send on "
+              << workerInfo_.name_ << std::endl << std::flush;
+          ctx.recordTensors(tpBuffers->tensors);
+        }
+        //std::cout << "=== in pipeWrite cb\n" << std::flush;
+
         fn(error);
       });
-  std::cout << "after pipe write\n" << std::flush;
+  std::cout << "after pipe write is_cuda? " << is_cuda << " on " << workerInfo_.name_ << std::endl << std::flush;
 }
 
 void TensorPipeAgent::sendCompletedResponseMessage(
@@ -691,12 +707,21 @@ std::shared_ptr<FutureMessage> TensorPipeAgent::send(
   VLOG(1) << "RPC agent for " << workerInfo_.name_ << " is sending request #"
           << messageId << " to " << clientPipe.pipe_->getRemoteName();
 
+  bool isCuda = requestMessage.tensors().size() > 0 && requestMessage.tensors()[0].device().is_cuda();
+  if (isCuda) {
+    std::cout << "================== got cuda send on " << workerInfo_.name_ << std::endl << std::flush;
+  }
   pipeWrite(
       clientPipe.pipe_,
       std::move(requestMessage),
       std::move(devices),
       DevicesContext(/*noCuda*/ devices.empty()),
-      [this, &clientPipe, messageId](const tensorpipe::Error& error) mutable {
+      [this, &clientPipe, messageId, isCuda](const tensorpipe::Error& error) mutable {
+        if (isCuda) {
+          std::cout << " ================================= good pipeWrite from " << workerInfo_.name_ << " to "
+              << clientPipe.pipe_->getRemoteName()
+              << ", error? " << error << std::endl << std::flush;
+        }
         if (error) {
           if (error.isOfType<tensorpipe::PipeClosedError>() &&
               !rpcAgentRunning_.load()) {
