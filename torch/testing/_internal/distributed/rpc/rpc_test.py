@@ -4605,9 +4605,14 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
 
     @staticmethod
     def _gpu_add_default_gpu(x, y):
-        print("======================== !!!! in user function")
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        print("======================== !!!! in user function, ", x, y)
         if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
-            return x + y
+            z = x + y
+            torch.cuda.synchronize(0)
+            print("========= user computed result as ", z)
+            return z
         else:
             raise ValueError("Wrong device affinity")
 
@@ -4626,14 +4631,20 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
+        x = torch.zeros(2).to(0)
+        y = torch.ones(2).to(0)
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
         ret = rpc.rpc_sync(
             dst,
             TensorPipeAgentRpcTest._gpu_add_default_gpu,
-            args=(torch.zeros(2).to(0), torch.ones(2).to(0))
+            args=(y, x)
         )
-        print("=========== !!!!! got response")
-        #self.assertEqual(ret.device, torch.device(0))
-        #self.assertEqual(ret, (torch.zeros(2) + torch.ones(2)).to(0))
+        print("=========== !!!!! got response ", ret)
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        self.assertEqual(ret.device, torch.device(0))
+        self.assertEqual(ret, (torch.zeros(2) + torch.ones(2)).to(0))
         rpc.shutdown()
 
     @staticmethod
