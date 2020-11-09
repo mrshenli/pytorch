@@ -749,7 +749,8 @@ std::shared_ptr<FutureMessage> TensorPipeAgent::send(
             [this, &clientPipe](
                 const tensorpipe::Error& error,
                 Message&& responseMessage,
-                DevicesContext&& /* unused */) {
+                DevicesContext&& ctx) {
+              ctx.wait();
               if (error) {
                 if (error.isOfType<tensorpipe::PipeClosedError>() &&
                     !rpcAgentRunning_.load()) {

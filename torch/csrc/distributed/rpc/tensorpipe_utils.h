@@ -5,6 +5,7 @@
 #include <torch/csrc/distributed/rpc/utils.h>
 
 #ifdef USE_CUDA
+#include <ATen/cuda/CUDAEvent.h>
 #include <c10/cuda/CUDAFunctions.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
@@ -68,6 +69,14 @@ struct DevicesContext {
         c10::cuda::CUDACachingAllocator::recordStream(
             dataPtr, streams_[dataPtr.device().index()]);
       }
+    }
+  }
+
+  inline void wait() const {
+    for (const auto& stream: streams_) {
+      at::cuda::CUDAEvent event;
+      event.record(stream);
+      event.block(at::cuda::getCurrentCUDAStream(stream.device().index()));
     }
   }
 
