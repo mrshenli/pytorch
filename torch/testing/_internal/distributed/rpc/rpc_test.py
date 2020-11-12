@@ -4595,20 +4595,22 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
-        x = torch.zeros(2).to(0)
-        y = torch.ones(2).to(0)
-        torch.cuda.synchronize(0)
-        torch.cuda.synchronize(1)
-        ret = rpc.rpc_sync(
-            dst,
-            TensorPipeAgentRpcTest._gpu_add_default_gpu,
-            args=(y, x)
-        )
-        print("=========== !!!!! got response ", ret)
-        torch.cuda.synchronize(0)
-        torch.cuda.synchronize(1)
-        self.assertEqual(ret.device, torch.device(0))
-        self.assertEqual(ret, (torch.zeros(2) + torch.ones(2)).to(0))
+        if self.rank == 0:
+
+            x = torch.ones(2).to(torch.uint8).to(0)
+            y = torch.ones(2).to(torch.uint8).to(0)
+            torch.cuda.synchronize(0)
+            torch.cuda.synchronize(1)
+            ret = rpc.rpc_sync(
+                dst,
+                TensorPipeAgentRpcTest._gpu_add_default_gpu,
+                args=(y, x)
+            )
+            print("=========== !!!!! got response ", ret)
+            torch.cuda.synchronize(0)
+            torch.cuda.synchronize(1)
+            self.assertEqual(ret.device, torch.device(0))
+            self.assertEqual(ret, (torch.ones(2) + torch.ones(2)).to(torch.uint8).to(0))
         rpc.shutdown()
 
     @staticmethod
