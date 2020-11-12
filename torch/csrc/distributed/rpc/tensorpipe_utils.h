@@ -80,6 +80,12 @@ struct DevicesContext {
     }
   }
 
+  inline void synchronize() const {
+    for (const auto& stream: streams_) {
+      stream.synchronize();
+    }
+  }
+
  private:
   std::vector<CUDAStream> streams_;
 #endif

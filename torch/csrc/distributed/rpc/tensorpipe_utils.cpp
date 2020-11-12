@@ -136,13 +136,16 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
         tpMessage.tensors.push_back(tensorpipe::Message::Tensor{std::move(buf), std::move(metadata)});
         */
         std::cout << "=== before adding cudaBuffer\n" << std::flush;
-        tpMessage.tensors.push_back(tensorpipe::Message::Tensor{
+        std::cout << "-------------- buffer ptr" << (long) buffers.tensors[i].storage().data_ptr().get() << ", cudabuffer " << (long)tensorPtr << std::endl << std::flush;
+         tpMessage.tensors.push_back(tensorpipe::Message::Tensor{
             tensorpipe::CudaBuffer{
                 tensorPtr,
                 tensorData.sizeInBytes(),
                 ctx.streams()[tensorDataVec[i].device().index()].stream()},
             std::move(metadata)});
         std::cout << "=== after adding cudaBuffer\n" << std::flush;
+        std::cout << "sending CUDA tensor " << buffers.tensors[i] << std::endl << std::flush;
+
 #endif
       }
     }
@@ -203,6 +206,7 @@ TensorpipeReadBuffers tensorpipeAllocate(
           c10::cuda::CUDACachingAllocator::get()->allocate(
               tensor.buffer.cuda.length));
       tensor.buffer.cuda.ptr = buffers.tensors.back().get();
+      std::cout << "+++++++ reading tensor of size " << tensor.buffer.cuda.length << std::endl << std::flush;
       tensor.buffer.cuda.stream =
           ctx.streams()[deviceIndex].stream();
 #endif
@@ -217,6 +221,7 @@ TensorpipeReadBuffers tensorpipeAllocate(
 Message tensorpipeDeserialize(
     tensorpipe::Message&& message,
     TensorpipeReadBuffers&& buffers) {
+  c10::cuda::device_synchronize();
   // Tensors
   std::vector<at::Tensor> tensors;
   const char* pickleData = buffers.pickle.data();
@@ -236,6 +241,7 @@ Message tensorpipeDeserialize(
     return std::move(buffers.tensors.at(index));
   };
 
+
   // No need to pass typeResolver here, as it always processes string and
   // tensors only
   torch::jit::Unpickler unpickler(
@@ -245,8 +251,13 @@ Message tensorpipeDeserialize(
       tensorReadFunc,
       {},
       /* use_storage_device*/ true);
+
+
+
+
   auto ival = unpickler.parse_ivalue();
   for (auto&& t : ival.toTensorList()) {
+    std::cout << "===== receiving CUDA tensor " << t << std::endl << std::flush;
     tensors.emplace_back(std::move(t));
   }
 
