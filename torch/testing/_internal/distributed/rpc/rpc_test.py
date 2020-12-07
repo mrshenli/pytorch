@@ -4647,6 +4647,15 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         # TODO: why this crash on shutdown???
         rpc.shutdown()
 
+    @staticmethod
+    def _gpu_add_given_gpu_x(x, y, d):
+        if all([x.is_cuda, x.device.index == d, y.is_cuda, y.device.index == d]):
+            print("==== in user function!!!")
+            #return torch.ones(2).to(d) * 3
+            return x + y
+        else:
+            raise ValueError("Wrong device affinity")
+
     @skip_if_lt_x_gpu(2)
     def test_device_maps_non_default_gpu(self):
         torch.zeros(2).to(0).to(1)
@@ -4663,6 +4672,7 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
+        #if self.rank == 0:
         x = torch.ones(2).to(torch.uint8).to(device)
         y = torch.ones(2).to(torch.uint8).to(device)
         # TODO: remove syncs
@@ -4670,7 +4680,7 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         torch.cuda.synchronize(1)
         ret = rpc.rpc_sync(
             dst,
-            TensorPipeAgentRpcTest._gpu_add_given_gpu,
+            TensorPipeAgentRpcTest._gpu_add_given_gpu_x,
             args=(x, x, device)
         )
 
