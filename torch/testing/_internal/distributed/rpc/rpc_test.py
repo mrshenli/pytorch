@@ -4629,8 +4629,8 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         x = torch.ones(2).to(torch.uint8).to(device)
         y = torch.ones(2).to(torch.uint8).to(device)
         # TODO: remove syncs
-        torch.cuda.synchronize(0)
-        torch.cuda.synchronize(1)
+        #torch.cuda.synchronize(0)
+        #torch.cuda.synchronize(1)
         ret = rpc.rpc_sync(
             dst,
             TensorPipeAgentRpcTest._gpu_add_given_gpu,
@@ -4672,6 +4672,7 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
+        # it would hang if I uncomment the if below...
         #if self.rank == 0:
         x = torch.ones(2).to(torch.uint8).to(device)
         y = torch.ones(2).to(torch.uint8).to(device)

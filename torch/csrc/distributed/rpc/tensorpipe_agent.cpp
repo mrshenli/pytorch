@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <tensorpipe/tensorpipe.h>
 
+#include <torch/csrc/distributed/rpc/tensorpipe_utils.h>
 #include <torch/csrc/distributed/rpc/utils.h>
 
 namespace torch {
@@ -408,12 +409,12 @@ void TensorPipeAgent::onListenerAccepted(
 void TensorPipeAgent::pipeRead(
     const std::shared_ptr<tensorpipe::Pipe>& pipe,
     std::function<void(
-        const tensorpipe::Error&, Message&&, DevicesContext&&)> fn) noexcept {
+        const tensorpipe::Error&, Message&&, FullDeviceContext&&)> fn) noexcept {
   pipe->readDescriptor([fn{std::move(fn)}, pipe, this](
                            const tensorpipe::Error& error,
                            tensorpipe::Message tpMessage) mutable {
     // TODO: pass these streams to TensorPipe when it can accept streams
-    DevicesContext ctx(reverseDeviceMaps_.empty() && opts_.deviceMaps.empty());
+    FullDeviceContext ctx(reverseDeviceMaps_.empty() && opts_.deviceMaps.empty());
 
     if (error) {
       std::cout << "=== got error in pipeRead from " << pipe->getRemoteName() << " to " << workerInfo_.name_ << std::endl << std::flush;
@@ -441,7 +442,7 @@ void TensorPipeAgent::pipeRead(
 
           // FIXME This does some unpickling, which could be a bit expensive:
           // perhaps it would be best to perform it inside the worker threads?
-          ctx.wait();
+          ctx.blockCurrentStreams();
           Message rpcMessage = tensorpipeDeserialize(
               std::move(tpMessage), std::move(*tpBuffers));
 
@@ -460,7 +461,7 @@ void TensorPipeAgent::pipeWrite(
     const std::shared_ptr<tensorpipe::Pipe>& pipe,
     Message&& rpcMessage,
     std::vector<c10::DeviceIndex>&& devices,
-    DevicesContext&& ctx,
+    FullDeviceContext&& ctx,
     std::function<void(const tensorpipe::Error&)> fn) noexcept {
   tensorpipe::Message tpMessage;
   TensorpipeWriteBuffers tpBuffers;
@@ -496,7 +497,7 @@ void TensorPipeAgent::sendCompletedResponseMessage(
     std::shared_ptr<tensorpipe::Pipe>& pipe,
     std::shared_ptr<FutureMessage>& futureResponseMessage,
     uint64_t messageId,
-    DevicesContext&& ctx) {
+    FullDeviceContext&& ctx) {
   if (!rpcAgentRunning_.load()) {
     LOG(WARNING) << "RPC agent for " << workerInfo_.name_
                  << " won't send response to request #" << messageId << " to "
@@ -570,7 +571,7 @@ void TensorPipeAgent::respond(std::shared_ptr<tensorpipe::Pipe>& pipe) {
       [this, pipe](
           const tensorpipe::Error& error,
           Message&& requestMessage,
-          DevicesContext&& ctx) mutable {
+          FullDeviceContext&& ctx) mutable {
         if (error) {
           // FIXME This is not a correct way to check whether this error was
           // "intentionally" caused by the remote end shutting down. We should
@@ -730,11 +731,14 @@ std::shared_ptr<FutureMessage> TensorPipeAgent::send(
   if (isCuda) {
     std::cout << "================== got cuda send on " << workerInfo_.name_ << std::endl << std::flush;
   }
+
+  auto ctx = FullDeviceContext(devices.empty());
+  ctx.waitForCurrentStreams();
   pipeWrite(
       clientPipe.pipe_,
       std::move(requestMessage),
       std::move(devices),
-      DevicesContext(/*noCuda*/ devices.empty()),
+      std::move(ctx),
       [this, &clientPipe, messageId, isCuda](const tensorpipe::Error& error) mutable {
         if (isCuda) {
           std::cout << " ================================= good pipeWrite from " << workerInfo_.name_ << " to "
@@ -768,8 +772,8 @@ std::shared_ptr<FutureMessage> TensorPipeAgent::send(
             [this, &clientPipe](
                 const tensorpipe::Error& error,
                 Message&& responseMessage,
-                DevicesContext&& ctx) {
-              ctx.wait();
+                FullDeviceContext&& ctx) {
+              ctx.blockCurrentStreams();
               if (error) {
                 if (error.isOfType<tensorpipe::PipeClosedError>() &&
                     !rpcAgentRunning_.load()) {

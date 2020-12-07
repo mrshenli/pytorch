@@ -2,9 +2,7 @@
 
 #ifdef USE_TENSORPIPE
 
-#include <torch/csrc/distributed/rpc/utils.h>
-
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
 #include <tensorpipe/common/cuda_buffer.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/cuda/CUDACachingAllocator.h>
@@ -44,7 +42,7 @@ inline c10::Device indexToDevice(c10::DeviceIndex index) {
 std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
     Message&& rpcMessage,
     std::vector<c10::DeviceIndex> deviceIndices,
-    const DevicesContext& ctx) {
+    const FullDeviceContext& ctx) {
   tensorpipe::Message tpMessage;
   TensorpipeWriteBuffers buffers;
 
@@ -123,7 +121,7 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
         tpMessage.tensors.push_back(tensorpipe::Message::Tensor{
             tensorpipe::CpuBuffer{tensorPtr, tensorData.sizeInBytes()},
             std::move(metadata)});
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
       } else {
         /*
         cudaStream_t stream =
@@ -135,16 +133,16 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
         };
         tpMessage.tensors.push_back(tensorpipe::Message::Tensor{std::move(buf), std::move(metadata)});
         */
-        std::cout << "=== before adding cudaBuffer\n" << std::flush;
-        std::cout << "-------------- buffer ptr" << (long) buffers.tensors[i].storage().data_ptr().get() << ", cudabuffer " << (long)tensorPtr << std::endl << std::flush;
-         tpMessage.tensors.push_back(tensorpipe::Message::Tensor{
+        //std::cout << "=== before adding cudaBuffer\n" << std::flush;
+        //std::cout << "-------------- buffer ptr" << (long) buffers.tensors[i].storage().data_ptr().get() << ", cudabuffer " << (long)tensorPtr << std::endl << std::flush;
+        tpMessage.tensors.push_back(tensorpipe::Message::Tensor{
             tensorpipe::CudaBuffer{
                 tensorPtr,
                 tensorData.sizeInBytes(),
                 ctx.streams()[tensorDataVec[i].device().index()].stream()},
             std::move(metadata)});
-        std::cout << "=== after adding cudaBuffer\n" << std::flush;
-        std::cout << "sending CUDA tensor " << buffers.tensors[i] << std::endl << std::flush;
+        //std::cout << "=== after adding cudaBuffer\n" << std::flush;
+        //std::cout << "sending CUDA tensor " << buffers.tensors[i] << std::endl << std::flush;
 
 #endif
       }
@@ -156,7 +154,7 @@ std::tuple<tensorpipe::Message, TensorpipeWriteBuffers> tensorpipeSerialize(
 
 TensorpipeReadBuffers tensorpipeAllocate(
     tensorpipe::Message& tpMessage,
-    const DevicesContext& ctx) {
+    const FullDeviceContext& ctx) {
   TensorpipeReadBuffers buffers;
 
   TORCH_INTERNAL_ASSERT(
@@ -197,7 +195,7 @@ TensorpipeReadBuffers tensorpipeAllocate(
       buffers.tensors.emplace_back(
           at::getCPUAllocator()->allocate(tensor.buffer.cpu.length));
       tensor.buffer.cpu.ptr = buffers.tensors.back().get();
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
     } else if (tensor.buffer.type == tensorpipe::DeviceType::kCuda) {
       std::cout << "==== allocating CUDA tensor\n" << std::flush;
       auto deviceIndex = std::stoi(tensor.metadata);

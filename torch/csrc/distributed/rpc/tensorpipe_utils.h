@@ -2,9 +2,10 @@
 
 #ifdef USE_TENSORPIPE
 
+#include <torch/csrc/distributed/rpc/macros.h>
 #include <torch/csrc/distributed/rpc/utils.h>
 
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
 #include <ATen/cuda/CUDAEvent.h>
 #include <c10/cuda/CUDAFunctions.h>
 #include <c10/cuda/CUDAStream.h>
@@ -19,26 +20,24 @@ namespace torch {
 namespace distributed {
 namespace rpc {
 
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
 using at::cuda::CUDAStream;
 #endif
 
-struct DevicesContext {
+struct FullDeviceContext {
 
-  DevicesContext(const DevicesContext& other) = default;
-  DevicesContext(DevicesContext&& other) = default;
+  FullDeviceContext(const FullDeviceContext& other) = default;
+  FullDeviceContext(FullDeviceContext&& other) = default;
 
-  DevicesContext& operator=(const DevicesContext& rhs) = default;
-  DevicesContext& operator=(DevicesContext&& rhs) & = default;
+  FullDeviceContext& operator=(const FullDeviceContext& rhs) = default;
+  FullDeviceContext& operator=(FullDeviceContext&& rhs) & = default;
 
   void synchronize() {}
 
-#ifndef USE_CUDA
-  explicit DevicesContext(bool noCuda=true) : noCuda_(noCuda) {}
-#else
   // Use the noCuda arg to disable streams management when deviceMaps are not
   // set.
-  explicit DevicesContext(bool noCuda=true) : noCuda_(noCuda) {
+  explicit FullDeviceContext(bool noCuda=true) : noCuda_(noCuda) {
+#ifdef USE_CUDA_NOT_ROCM
     if (!noCuda_) {
       auto deviceNum = at::cuda::device_count();
       streams_.reserve(deviceNum);
@@ -47,22 +46,28 @@ struct DevicesContext {
           /* isHighPriority */ false, /* device */ idx));
       }
     }
+#endif
   }
 
+#ifdef USE_CUDA_NOT_ROCM
   inline const std::vector<CUDAStream>& streams() const {
     return streams_;
   }
+#endif
 
   inline void recordDataPtrs(const std::vector<c10::DataPtr>& dataPtrs) const {
+#ifdef USE_CUDA_NOT_ROCM
     for (const auto& dataPtr: dataPtrs) {
       if (dataPtr.device().is_cuda()) {
         c10::cuda::CUDACachingAllocator::recordStream(
             dataPtr, streams_[dataPtr.device().index()]);
       }
     }
+#endif
   }
 
   inline void recordTensors(const std::vector<torch::Tensor>& tensors) const {
+#ifdef USE_CUDA_NOT_ROCM
     for (const auto& tensor: tensors) {
       const auto& dataPtr = tensor.storage().data_ptr();
       if (dataPtr.device().is_cuda()) {
@@ -70,35 +75,50 @@ struct DevicesContext {
             dataPtr, streams_[dataPtr.device().index()]);
       }
     }
+#endif
   }
 
-  inline void wait() const {
+  inline void blockCurrentStreams() const {
+#ifdef USE_CUDA_NOT_ROCM
     for (const auto& stream: streams_) {
       at::cuda::CUDAEvent event;
       event.record(stream);
       event.block(at::cuda::getCurrentCUDAStream(stream.device().index()));
     }
+#endif
+  }
+
+  inline void waitForCurrentStreams() const {
+#ifdef USE_CUDA_NOT_ROCM
+    for (const auto& stream: streams_) {
+      at::cuda::CUDAEvent event;
+      event.record(at::cuda::getCurrentCUDAStream(stream.device().index()));
+      event.block(stream);
+    }
+#endif
   }
 
   inline void synchronize() const {
+#ifdef USE_CUDA_NOT_ROCM
     for (const auto& stream: streams_) {
       stream.synchronize();
     }
+#endif
   }
 
  private:
+#ifdef USE_CUDA_NOT_ROCM
   std::vector<CUDAStream> streams_;
 #endif
 
- private:
   const bool noCuda_;
 };
 
 
 struct DevicesStateGuard {
 
-#ifdef USE_CUDA
-  DevicesStateGuard(const DevicesContext& ctx) {
+#ifdef USE_CUDA_NOT_ROCM
+  DevicesStateGuard(const FullDeviceContext& ctx) {
     const auto& streams = ctx.streams();
     std::vector<CUDAStream> prevStreams_;
     prevStreams_.reserve(streams.size());
@@ -115,7 +135,7 @@ struct DevicesStateGuard {
     }
   }
 #else
-  DevicesStateGuard(DevicesContext /* unused */) {};
+  DevicesStateGuard(FullDeviceContext /* unused */) {};
 #endif
 
   DevicesStateGuard(const DevicesStateGuard& other) = delete;
@@ -124,7 +144,7 @@ struct DevicesStateGuard {
   DevicesStateGuard& operator=(DevicesStateGuard&& rhs) = delete;
 
  private:
-#ifdef USE_CUDA
+#ifdef USE_CUDA_NOT_ROCM
   std::vector<CUDAStream> prevStreams_;
 #endif
 };
@@ -162,7 +182,7 @@ TORCH_API std::tuple<tensorpipe::Message, TensorpipeWriteBuffers>
 tensorpipeSerialize(
     Message&& rpcMessage,
     std::vector<c10::DeviceIndex> devices = {},
-    const DevicesContext& = DevicesContext(/* noCuda */ true));
+    const FullDeviceContext& = FullDeviceContext(/* noCuda */ true));
 
 // Allocate the buffers that will hold the incoming data. They will be managed
 // by the returned holder, which must be kept alive until the asynchronous read
@@ -171,7 +191,7 @@ tensorpipeSerialize(
 TORCH_API TensorpipeReadBuffers
 tensorpipeAllocate(
     tensorpipe::Message& tpMessage,
-    const DevicesContext& ctx = DevicesContext(/* noCuda */ true));
+    const FullDeviceContext& ctx = FullDeviceContext(/* noCuda */ true));
 
 // Convert a TensorPipe message back into an RPC message. This requires the data
 // to be available and can thus only be performed once the asynchronous read has

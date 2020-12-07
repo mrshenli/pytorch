@@ -9,18 +9,14 @@
 #include <c10d/PrefixStore.hpp>
 #include <c10d/ProcessGroup.hpp>
 #include <c10d/Store.hpp>
+#include <torch/csrc/distributed/rpc/macros.h>
 #include <torch/csrc/distributed/rpc/rpc_agent.h>
 
-#include <torch/csrc/distributed/rpc/tensorpipe_utils.h>
 
 // Forward-declare the TensorPipe classes we need, to avoid including its
 // headers in PyTorch's ones and thus have it become a public dependency.
 
 namespace tensorpipe {
-
-#if defined(USE_CUDA) && !defined(__HIP_PLATFORM_HCC__)
-#define USE_CUDA_NOT_ROCM
-#endif
 
 class CpuBuffer;
 
@@ -59,6 +55,10 @@ using DeviceMap = std::unordered_map<c10::DeviceIndex, c10::DeviceIndex>;
 namespace torch {
 namespace distributed {
 namespace rpc {
+
+#ifdef USE_CUDA_NOT_ROCM
+class FullDeviceContext;
+#endif
 
 using steady_clock_time_point =
     std::chrono::time_point<std::chrono::steady_clock>;
@@ -232,7 +232,7 @@ class TensorPipeAgent : public RpcAgent {
   void pipeRead(
       const std::shared_ptr<tensorpipe::Pipe>&,
       std::function<void(
-          const tensorpipe::Error&, Message&&, DevicesContext&&)>) noexcept;
+          const tensorpipe::Error&, Message&&, FullDeviceContext&&)>) noexcept;
 
   // TensorPipe write function that could be used to write response
   // messages by server, and write request messages by client.
@@ -240,7 +240,7 @@ class TensorPipeAgent : public RpcAgent {
       const std::shared_ptr<tensorpipe::Pipe>&,
       Message&& message,
       std::vector<c10::DeviceIndex>&& devices,
-      DevicesContext&& ctx,
+      FullDeviceContext&& ctx,
       std::function<void(const tensorpipe::Error&)>) noexcept;
 
   // Callback of listener accept()
@@ -255,7 +255,7 @@ class TensorPipeAgent : public RpcAgent {
       std::shared_ptr<tensorpipe::Pipe>& pipe,
       std::shared_ptr<FutureMessage>& futureResponseMessage,
       uint64_t messageId,
-      DevicesContext&& ctx);
+      FullDeviceContext&& ctx);
 
   // Collects metrics from successful RPC calls
   void trackNetworkData(
