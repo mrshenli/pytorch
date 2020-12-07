@@ -208,7 +208,9 @@ def _all_gather(obj, timeout=UNSET_RPC_TIMEOUT):
 
     with _all_gather_dict_lock:
         states = _all_gather_sequence_id_to_states[sequence_id]
+    print("========== ", self_name, " waiting for signal!!!!")
     states.proceed_signal.wait()
+    print("========== ", self_name, " got signal, proceed!!!")
 
     # Phase 2: Leader broadcast gathered results to all followers
     # Leader's signal is the first to be unblocked, after receiving all

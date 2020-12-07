@@ -4604,15 +4604,9 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         rpc.shutdown()
 
     @staticmethod
-    def _gpu_add_default_gpu(x, y):
-        torch.cuda.synchronize(0)
-        torch.cuda.synchronize(1)
-        print("======================== !!!! in user function, ", x, y)
-        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
-            z = x + y
-            torch.cuda.synchronize(0)
-            print("========= user computed result as ", z)
-            return z
+    def _gpu_add_given_gpu(x, y, d):
+        if all([x.is_cuda, x.device.index == d, y.is_cuda, y.device.index == d]):
+            return x + y
         else:
             raise ValueError("Wrong device affinity")
 
@@ -4621,7 +4615,8 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         torch.zeros(2).to(0).to(1)
         options = self.rpc_backend_options
         dst = worker_name((self.rank + 1) % self.world_size)
-        options.set_device_map(dst, {0: 0})
+        device = 0
+        options.set_device_map(dst, {device: device})
 
         rpc.init_rpc(
             name=worker_name(self.rank),
@@ -4631,37 +4626,76 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
             rpc_backend_options=options,
         )
 
-        if self.rank == 0:
+        x = torch.ones(2).to(torch.uint8).to(device)
+        y = torch.ones(2).to(torch.uint8).to(device)
+        # TODO: remove syncs
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        ret = rpc.rpc_sync(
+            dst,
+            TensorPipeAgentRpcTest._gpu_add_given_gpu,
+            args=(x, y, device)
+        )
 
-            x = torch.ones(2).to(torch.uint8).to(0)
-            y = torch.ones(2).to(torch.uint8).to(0)
-            torch.cuda.synchronize(0)
-            torch.cuda.synchronize(1)
-            ret = rpc.rpc_sync(
-                dst,
-                TensorPipeAgentRpcTest._gpu_add_default_gpu,
-                args=(y, x)
-            )
-            print("=========== !!!!! got response ", ret)
-            torch.cuda.synchronize(0)
-            torch.cuda.synchronize(1)
-            self.assertEqual(ret.device, torch.device(0))
-            self.assertEqual(ret, (torch.ones(2) + torch.ones(2)).to(torch.uint8).to(0))
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        print("+++++ ret is ", ret)
+        self.assertEqual(ret.device.index, device)
+        self.assertEqual(ret, (torch.ones(2) + torch.ones(2)).to(torch.uint8).to(device))
+        print("done !!!!!!!!!!!!!!")
+
+        # TODO: why this crash on shutdown???
+        rpc.shutdown()
+
+    @skip_if_lt_x_gpu(2)
+    def test_device_maps_non_default_gpu(self):
+        torch.zeros(2).to(0).to(1)
+        options = self.rpc_backend_options
+        dst = worker_name((self.rank + 1) % self.world_size)
+        device = 1
+        options.set_device_map(dst, {device: device})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        x = torch.ones(2).to(torch.uint8).to(device)
+        y = torch.ones(2).to(torch.uint8).to(device)
+        # TODO: remove syncs
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        ret = rpc.rpc_sync(
+            dst,
+            TensorPipeAgentRpcTest._gpu_add_given_gpu,
+            args=(x, x, device)
+        )
+
+        torch.cuda.synchronize(0)
+        torch.cuda.synchronize(1)
+        print("+++++ ret is ", ret)
+        self.assertEqual(ret.device.index, device)
+        self.assertEqual(ret, (torch.ones(2) + torch.ones(2)).to(torch.uint8).to(device))
+        print("done !!!!!!!!!!!!!!")
+
         rpc.shutdown()
 
     @staticmethod
     def _gpu_add_multi_gpu(x, y):
         print("==== in user function!!!!!")
-        if all([x.is_cuda, x.device.index == 0, y.is_cuda, y.device.index == 0]):
-            return x + y.to(0), x.to(0) - y
+        if all([x.is_cuda, x.device.index == 1, y.is_cuda, y.device.index == 0]):
+            return x.to(0) + y, x - y.to(1)
         else:
             raise ValueError("Wrong device affinity")
 
     def _test_device_maps_multi_gpu(self, dst):
         torch.zeros(2).to(0).to(1)
         options = self.rpc_backend_options
-        options.set_device_map(dst, {0: 0})
-        #options.set_device_map(dst, {1: 1})
+        options.set_device_map(dst, {0: 1})
+        options.set_device_map(dst, {1: 0})
 
         rpc.init_rpc(
             name=worker_name(self.rank),
@@ -4672,22 +4706,30 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         )
 
         if self.rank == 0:
+            x = torch.zeros(2).to(0)
+            y = torch.ones(2).to(1)
+            torch.cuda.synchronize(0)
+            torch.cuda.synchronize(1)
             rets = rpc.rpc_sync(
                 dst,
                 TensorPipeAgentRpcTest._gpu_add_multi_gpu,
-                args=(torch.zeros(2).to(0), torch.ones(2).to(0))
+                args=(x, y)
             )
-            #self.assertEqual(rets[0].device, torch.device(1))
-            #self.assertEqual(rets[1].device, torch.device(0))
-            #self.assertEqual(rets[0], (torch.zeros(2) + torch.ones(2)).to(1))
-            #self.assertEqual(rets[1], (torch.zeros(2) - torch.ones(2)).to(0))
+            print("+++++++++ got result", rets)
+            torch.cuda.synchronize(0)
+            torch.cuda.synchronize(1)
+            self.assertEqual(rets[0].device, torch.device(1))
+            self.assertEqual(rets[1].device, torch.device(0))
+            self.assertEqual(rets[0], (torch.zeros(2) + torch.ones(2)).to(1))
+            self.assertEqual(rets[1], (torch.zeros(2) - torch.ones(2)).to(0))
         rpc.shutdown()
 
     @skip_if_lt_x_gpu(2)
-    def test_device_maps_multi_gpu_x(self):
+    def test_device_maps_multi_gpu(self):
         dst = worker_name((self.rank + 1) % self.world_size)
         self._test_device_maps_multi_gpu(dst)
 
+    @unittest.skip("TensorPipe agent does not yet support sending to self")
     @skip_if_lt_x_gpu(2)
     def test_device_maps_multi_gpu_self(self):
         dst = worker_name(self.rank)
