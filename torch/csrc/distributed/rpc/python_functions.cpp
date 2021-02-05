@@ -138,7 +138,26 @@ c10::intrusive_ptr<JitFuture> toPyJitFuture(
     const std::shared_ptr<JitFuture>& messageJitFuture,
     bool hasValue) {
   if (hasValue) {
+    auto child = messageJitFuture->createInstance(PyObjectType::get());
     std::weak_ptr<JitFuture> wp = messageJitFuture;
+    messageJitFuture->addCallback(
+        at::wrapPropagateTLSState<IValue>([wp, child]() {
+          auto future = wp.lock();
+          if (future->hasError()) {
+            std::rethrow_exception(future->exception_ptr());
+          } else {
+            const Message& message = *future->value().toCustomClass<Message>();
+            std::vector<std::reference_wrapper<const at::DataPtr>> dataPtrs;
+            for (const auto& tensor : message.tensors()) {
+              data_ptrs.emplace_back(tensor.storage().data_ptr());
+            }
+            child->markCompletedWithDataPtrs(
+                toPyIValue(message), std::move(dataPtrs));
+          }
+        });
+    return child;
+
+    /*
     return messageJitFuture->then(
         at::wrapPropagateTLSState<IValue>([wp]() {
           auto future = wp.lock();
@@ -149,6 +168,7 @@ c10::intrusive_ptr<JitFuture> toPyJitFuture(
           }
         }),
         PyObjectType::get());
+    */
   } else {
     std::weak_ptr<JitFuture> wp = messageJitFuture;
     return messageJitFuture->then(

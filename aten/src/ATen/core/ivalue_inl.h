@@ -355,6 +355,12 @@ struct C10_EXPORT ivalue::Future : c10::intrusive_ptr_target {
    * Explicitly mark the future as completed with the output value.
    */
   void markCompleted(IValue value) {
+    markCompletedWithDataPtrs(std::move(value));
+  }
+
+  void markCompletedWithDataPtrs(
+      IValue value,
+      std::vector<std::reference_wrapper<const at::DataPtr>> data_ptrs = {}) {
     std::unique_lock<std::mutex> lock(mutex_);
     TORCH_CHECK(
         !completed(),
@@ -363,7 +369,7 @@ struct C10_EXPORT ivalue::Future : c10::intrusive_ptr_target {
     completed_ = true;
     value_ = std::move(value);
 
-    postMarkCompletedHook(value_);
+    postMarkCompletedHook(value_, std::move(data_ptrs));
 
     std::vector<std::function<void(void)>> cbs;
     cbs.swap(callbacks_);
@@ -374,6 +380,8 @@ struct C10_EXPORT ivalue::Future : c10::intrusive_ptr_target {
       callback();
     }
   }
+
+
 
   void markCompleted() {
     markCompleted(IValue{});
@@ -490,7 +498,6 @@ struct C10_EXPORT ivalue::Future : c10::intrusive_ptr_target {
     return type_;
   }
 
- protected:
   // This hook is called by this class's then() method when it prepares the
   // instance it returns to the caller. It should be overridden by subclasses so
   // that they can produce an instace of their own type.
@@ -498,13 +505,17 @@ struct C10_EXPORT ivalue::Future : c10::intrusive_ptr_target {
     return c10::make_intrusive<Future>(type);
   }
 
+ protected:
+
   // This hook will be called by this class (the superclass) when the future is
   // marked completed _with a value_ (hence not in case of error). This is done
   // right away, while the mutex is still held, before any callbacks are run.
   // It allows subclasses to further update their state if they so need. For
   // example the CUDAFuture subclass uses it to determine what devices the value
   // resides on and record an event in those devices' current streams.
-  virtual void postMarkCompletedHook(const at::IValue& value) {}
+  virtual void postMarkCompletedHook(
+      const at::IValue& value,
+      std::vector<std::reference_wrapper<const at::DataPtr>> data_ptrs) {}
 
   // This hook will be called by the addCallback() and the then() methods before
   // storing the callback for later execution (or before running it inline if
