@@ -309,6 +309,7 @@ libtorch_distributed_sources = [
     "torch/csrc/distributed/autograd/rpc_messages/rpc_with_profiling_resp.cpp",
     "torch/csrc/distributed/autograd/rpc_messages/rref_backward_req.cpp",
     "torch/csrc/distributed/autograd/rpc_messages/rref_backward_resp.cpp",
+    "torch/csrc/distributed/ddp/engine.cpp",
     "torch/csrc/distributed/rpc/message.cpp",
     "torch/csrc/distributed/rpc/profiler/remote_profiler_manager.cpp",
     "torch/csrc/distributed/rpc/profiler/server_process_global_profiler.cpp",
