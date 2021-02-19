@@ -1,9 +1,8 @@
 #pragma once
 
-#include <c10/util/Exception.h>
+#include <torch/csrc/distributed/ddp/event.h>
 #include <torch/csrc/distributed/ddp/event_handler.h>
 
-#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -36,12 +35,30 @@ class Engine {
 
   }
 
-
-
  private:
+
+  // NB: this function is thread-safe as it only reads eventNodes_. However, if
+  // an EventHandler is not thread-safe, that EventHandler should use locks
+  // accordingly.
+  void processEvent(const Event& event) {
+    auto iter = eventNodes_.find(event.schema());
+    TORCH_CHECK(iter != eventNodes_.end());
+    for (auto& node : iter->second->nextEdges_) {
+      auto handlerNode = std::static_pointer_cast<HandlerNode>(node);
+      for (auto& futureEvent: handlerNode->handler_->handleEvent(event)) {
+        std::weak_ptr<Future> wp = futureEvent;
+        futureEvent->addCallback([this, wp](){
+          auto fut = wp.lock();
+          processEvent(*fut->value().toCustomClass<Event>());
+        });
+      }
+    }
+
+  }
+
   void buildBiGraph() {
     // temporary helper data structure
-    std::unordered_map<EventSchema, std::vector<std::shared_ptr<HandlerNode>>> ingressMap;
+    std::unordered_map<EventSchema, std::vector<std::shared_ptr<HandlerNode>>, EventSchema::Hash> ingressMap;
 
     std::vector<std::shared_ptr<HandlerNode>> handlerNodes;
     for (auto& handler : handlers_) {
@@ -54,8 +71,8 @@ class Engine {
     }
 
     // RootHandler generates Type I events
-    auto rootHandler = std::make_shared<HandlerNode>(new RootHandler());
-    handlerNodes.push_back(rootHandler);
+    std::shared_ptr<EventHandler> rootHandler = std::make_shared<RootHandler>();
+    handlerNodes.push_back(std::make_shared<HandlerNode>(rootHandler));
 
     // build graph
     for (auto& handlerNode : handlerNodes) {
@@ -102,7 +119,7 @@ class Engine {
 
   }
 
-  std::unordered_map<EventSchema, std::shared_ptr<EventNode>> eventNodes_;
+  std::unordered_map<EventSchema, std::shared_ptr<EventNode>, EventSchema::Hash> eventNodes_;
   const std::vector<std::shared_ptr<EventHandler>> handlers_;
 };
 
