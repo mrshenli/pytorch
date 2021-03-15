@@ -4805,6 +4805,28 @@ class TensorPipeAgentRpcTest(RpcAgentTestFixture):
         )
 
     @skip_if_lt_x_gpu(2)
+    def test_device_map_error_on_new_gpu_0(self):
+        errMsg = "RPC detected that a user-function output tensor on device"
+        with self.assertRaisesRegex(RuntimeError, errMsg):
+            self._test_device_maps_gpu(
+                x_from=1,
+                y_from=1,
+                z_to=0,
+                device_map={1 : 0}
+        )
+
+    @skip_if_lt_x_gpu(2)
+    def test_device_map_error_on_new_gpu_1(self):
+        errMsg = "RPC detected that a user-function output tensor on device"
+        with self.assertRaisesRegex(RuntimeError, errMsg):
+            self._test_device_maps_gpu(
+                x_from=0,
+                y_from=0,
+                z_to=1,
+                device_map={1 : 0}
+        )
+
+    @skip_if_lt_x_gpu(2)
     def test_device_map_gpu_mixed_1(self):
         self._test_device_maps_gpu(
             x_from=0,

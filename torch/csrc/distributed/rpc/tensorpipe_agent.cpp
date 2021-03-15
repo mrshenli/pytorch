@@ -683,6 +683,28 @@ void TensorPipeAgent::sendCompletedResponseMessage(
       responseMessage = createExceptionResponse(e.what(), messageId);
     }
 
+    for (auto& device : devices) {
+      if (device != -1 && !ctx->hasDevice(device)) {
+        std::ostringstream oss;
+        std::copy(
+            devices.begin(),
+            devices.end(),
+            std::ostream_iterator<c10::DeviceIndex>(oss, ", "));
+        responseMessage = createExceptionResponse(
+            c10::str(
+                "RPC detected that a user-function output tensor on device ",
+                device,
+                ". This device is not one of the input tensor devices: ",
+                oss.str(),
+                "which is not yet supported. Please file a feature request "
+                "issue in PyTorch GitHub repo."
+            ),
+            messageId
+        );
+        break;
+      }
+    }
+
     pipeWrite(
         pipe,
         std::move(responseMessage),
