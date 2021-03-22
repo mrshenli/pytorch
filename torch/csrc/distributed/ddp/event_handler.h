@@ -26,7 +26,26 @@ class RootHandler : public EventHandler {
   }
 
   std::vector<EventSchema> egressEvents() override {
-    return {EventType::PREPARE_MODULE, PRE_FORWARD, POST_FORWARD};
+    return {
+        EventType::PREPARE_MODULE,
+        EventType::PRE_FORWARD,
+        EventType::POST_FORWARD};
+  }
+
+  std::vector<std::shared_ptr<Future>> handleEvent(const Event&) override {
+    TORCH_INTERNAL_ASSERT(false);
+  }
+};
+
+
+class DefaultTrigger : public EventHandler {
+ public:
+  std::vector<EventSchema> ingressEvents() override {
+    return {EventType::PREPARE_MODULE};
+  }
+
+  std::vector<EventSchema> egressEvents() override {
+    return {EventType::GRAD_READY};
   }
 
   std::vector<std::shared_ptr<Future>> handleEvent(const Event&) override {
