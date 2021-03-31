@@ -2,13 +2,13 @@
 
 #include <ATen/core/ivalue_inl.h>
 #include <c10/util/Exception.h>
-#include <torch/csrc/distributed/ddp/event_schema.h>
+#include <torch/csrc/distributed/spmd/event_schema.h>
 
 #include <memory>
 
 namespace torch {
 namespace distributed {
-namespace ddp {
+namespace spmd {
 
 struct EventContent {
 
@@ -39,6 +39,6 @@ class Event : public torch::CustomClassHolder {
 // TODO: add the following to ddp/init.cpp
 // static const auto message = torch::class_<Event>("rpc", "_Event");
 
-} // ddp
+} // spmd
 } // distributed
 } // torch

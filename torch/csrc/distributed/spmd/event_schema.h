@@ -2,7 +2,7 @@
 
 namespace torch {
 namespace distributed {
-namespace ddp {
+namespace spmd {
 
 enum EventType {
   PREPARE_MODULE = 0,
@@ -27,6 +27,6 @@ struct EventSchema {
   const EventType type_;
 };
 
-} // namespace ddp
+} // namespace spmd
 } // namespace distributed
 } // namespace torch

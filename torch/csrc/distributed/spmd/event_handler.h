@@ -1,13 +1,13 @@
 #pragma once
 
-#include <torch/csrc/distributed/ddp/event.h>
+#include <torch/csrc/distributed/spmd/event.h>
 
 #include <vector>
 
 
 namespace torch {
 namespace distributed {
-namespace ddp {
+namespace spmd {
 
 using c10::ivalue::Future;
 
@@ -53,6 +53,6 @@ class DefaultTrigger : public EventHandler {
   }
 };
 
-} // namespace ddp
+} // namespace spmd
 } // namespace distributed
 } // namespace torch

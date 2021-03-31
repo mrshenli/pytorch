@@ -1,7 +1,7 @@
 #pragma once
 
-#include <torch/csrc/distributed/ddp/event.h>
-#include <torch/csrc/distributed/ddp/event_handler.h>
+#include <torch/csrc/distributed/spmd/event.h>
+#include <torch/csrc/distributed/spmd/event_handler.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -9,7 +9,7 @@
 
 namespace torch {
 namespace distributed {
-namespace ddp {
+namespace spmd {
 
 struct Node {
   std::vector<std::shared_ptr<Node>> nextEdges_;
@@ -124,6 +124,6 @@ class Engine {
 };
 
 
-} // namespace ddp
+} // namespace spmd
 } // namespace distributed
 } // namespace torch
