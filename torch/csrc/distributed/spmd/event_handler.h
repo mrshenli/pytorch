@@ -36,11 +36,14 @@ class RootHandler : public EventHandler {
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override {
     switch (event->schema().type_) {
-      case EventType::PREPARE_MODULE:
+      case EventType::PREPARE_MODULE: {
         auto pme =
-            c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event);
+            c10::dynamic_intrusive_pointer_cast<PrepareModuleEvent>(event);
         std::cout << "PREPARE_MODULE: " << pme->parameters().size() << std::endl << std::flush;
-      return {};
+        return {};
+      }
+      default:
+        return {};
     }
   }
 };

@@ -54,7 +54,11 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
           py::init([](const std::vector<std::shared_ptr<EventHandler>>& handlers) {
             return std::make_shared<Engine>(handlers);
           }),
-          py::arg("handlers"));
+          py::arg("handlers"))
+      .def(
+          "prepare_module",
+          &Engine::prepareModule,
+          py::call_guard<py::gil_scoped_release>());
 
   Py_RETURN_TRUE;
 }

@@ -30,9 +30,10 @@ struct EventNode : Node {
 
 class Engine {
  public:
-  Engine(std::vector<std::shared_ptr<EventHandler>> handlers)
-      : handlers_(std::move(handlers)) {
-
+  Engine(std::vector<std::shared_ptr<EventHandler>> handlers) {
+    handlers_ = std::move(handlers);
+    handlers_.emplace_back(std::make_shared<RootHandler>());
+    buildBiGraph();
   }
 
   void prepareModule(std::vector<at::Tensor> parameters) {
@@ -47,15 +48,20 @@ class Engine {
   // accordingly.
   void processEvent(const c10::intrusive_ptr<Event>& event) {
     auto iter = eventNodes_.find(event->schema());
-    TORCH_CHECK(iter != eventNodes_.end());
-    for (auto& node : iter->second->nextEdges_) {
-      auto handlerNode = std::static_pointer_cast<HandlerNode>(node);
-      for (auto& futureEvent: handlerNode->handler_->handleEvent(event)) {
-        std::weak_ptr<Future> wp = futureEvent;
-        futureEvent->addCallback([this, wp](){
-          auto fut = wp.lock();
-          processEvent(fut->value().toCustomClass<Event>());
-        });
+    //TORCH_CHECK(iter != eventNodes_.end());
+    std::cout << "got event " << event->schema().type_ << ", registered events? " << eventNodes_.size()
+              << ", found it? " << (iter != eventNodes_.end()) << std::endl << std::flush;
+    if (iter != eventNodes_.end()) {
+      std::cout << "==== yep, found it\n" << std::flush;
+      for (auto& node : iter->second->nextEdges_) {
+        auto handlerNode = std::static_pointer_cast<HandlerNode>(node);
+        for (auto& futureEvent: handlerNode->handler_->handleEvent(event)) {
+          std::weak_ptr<Future> wp = futureEvent;
+          futureEvent->addCallback([this, wp](){
+            auto fut = wp.lock();
+            processEvent(fut->value().toCustomClass<Event>());
+          });
+        }
       }
     }
 
@@ -86,6 +92,7 @@ class Engine {
         std::shared_ptr<EventNode> eventNode;
         if (iter == eventNodes_.end()) {
           eventNode = std::make_shared<EventNode>(eventSchema);
+          std::cout << "=== registering event " << eventSchema.type_ << std::endl << std::flush;
           eventNodes_.emplace(eventSchema, eventNode);
         }
 
@@ -120,12 +127,14 @@ class Engine {
       bfs(eventNodes_[eventSchema], seen);
     }
 
-    TORCH_CHECK(seen.size() == eventNodes_.size() + handlerNodes.size());
+    std::cout << "seen = " << seen.size() << ", eventNodes_.size = " << eventNodes_.size()
+              << ", handlerNodes = " << handlerNodes.size() << std::endl << std::flush;
+    //TORCH_CHECK(seen.size() == eventNodes_.size() + handlerNodes.size());
 
   }
 
   std::unordered_map<EventSchema, std::shared_ptr<EventNode>, EventSchema::Hash> eventNodes_;
-  const std::vector<std::shared_ptr<EventHandler>> handlers_;
+  std::vector<std::shared_ptr<EventHandler>> handlers_;
 };
 
 
