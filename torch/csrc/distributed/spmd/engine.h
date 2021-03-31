@@ -35,13 +35,18 @@ class Engine {
 
   }
 
+  void prepareModule(std::vector<at::Tensor> parameters) {
+    processEvent(
+        c10::make_intrusive<PrepareModuleEvent>(std::move(parameters)));
+  }
+
  private:
 
   // NB: this function is thread-safe as it only reads eventNodes_. However, if
   // an EventHandler is not thread-safe, that EventHandler should use locks
   // accordingly.
-  void processEvent(const Event& event) {
-    auto iter = eventNodes_.find(event.schema());
+  void processEvent(const c10::intrusive_ptr<Event>& event) {
+    auto iter = eventNodes_.find(event->schema());
     TORCH_CHECK(iter != eventNodes_.end());
     for (auto& node : iter->second->nextEdges_) {
       auto handlerNode = std::static_pointer_cast<HandlerNode>(node);
@@ -49,7 +54,7 @@ class Engine {
         std::weak_ptr<Future> wp = futureEvent;
         futureEvent->addCallback([this, wp](){
           auto fut = wp.lock();
-          processEvent(*fut->value().toCustomClass<Event>());
+          processEvent(fut->value().toCustomClass<Event>());
         });
       }
     }
