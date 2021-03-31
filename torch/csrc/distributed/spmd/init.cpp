@@ -33,7 +33,16 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
 
 
   auto eventHandler = shared_ptr_class_<EventHandler>(module, "EventHandler");
-  shared_ptr_class_<DefaultTrigger>(module, "DefaultTrigger", eventHandler);
+
+  shared_ptr_class_<DefaultTrigger>(module, "DefaultTrigger", eventHandler)
+      .def(py::init<>());
+
+  shared_ptr_class_<Engine>(module, "Engine")
+      .def(
+          py::init([](const std::vector<std::shared_ptr<EventHandler>>& handlers) {
+            return std::make_shared<Engine>(handlers);
+          }),
+          py::arg("handlers"));
 
   Py_RETURN_TRUE;
 }
