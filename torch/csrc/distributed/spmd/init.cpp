@@ -37,6 +37,18 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
   shared_ptr_class_<DefaultTrigger>(module, "DefaultTrigger", eventHandler)
       .def(py::init<>());
 
+  shared_ptr_class_<DefaultBucketIndexer>(
+      module, "DefaultBucketIndexer", eventHandler)
+      .def(py::init<>());
+
+  shared_ptr_class_<DefaultBucketAllocator>(
+      module, "DefaultBucketAllocator", eventHandler)
+      .def(py::init<>());
+
+  shared_ptr_class_<AllReduceComm>(
+      module, "AllReduceComm", eventHandler)
+      .def(py::init<>());
+
   shared_ptr_class_<Engine>(module, "Engine")
       .def(
           py::init([](const std::vector<std::shared_ptr<EventHandler>>& handlers) {

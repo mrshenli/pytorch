@@ -53,6 +53,52 @@ class DefaultTrigger : public EventHandler {
   }
 };
 
+class DefaultBucketIndexer : public EventHandler {
+ public:
+  std::vector<EventSchema> ingressEvents() override {
+    return {EventType::GRAD_READY, EventType::COMM_DONE};
+  }
+
+  std::vector<EventSchema> egressEvents() override {
+    return {EventType::BUCKET_CONTENT_READY};
+  }
+
+  std::vector<std::shared_ptr<Future>> handleEvent(const Event&) override {
+    TORCH_INTERNAL_ASSERT(false);
+  }
+};
+
+class DefaultBucketAllocator : public EventHandler {
+ public:
+  std::vector<EventSchema> ingressEvents() override {
+    return {EventType::PREPARE_MODULE, EventType::BUCKET_CONTENT_READY};
+  }
+
+  std::vector<EventSchema> egressEvents() override {
+    return {EventType::BUCKET_TENSOR_READY};
+  }
+
+  std::vector<std::shared_ptr<Future>> handleEvent(const Event&) override {
+    TORCH_INTERNAL_ASSERT(false);
+  }
+};
+
+class AllReduceComm : public EventHandler {
+ public:
+  std::vector<EventSchema> ingressEvents() override {
+    return {EventType::BUCKET_TENSOR_READY};
+  }
+
+  std::vector<EventSchema> egressEvents() override {
+    return {EventType::COMM_DONE};
+  }
+
+  std::vector<std::shared_ptr<Future>> handleEvent(const Event&) override {
+    TORCH_INTERNAL_ASSERT(false);
+  }
+};
+
+
 } // namespace spmd
 } // namespace distributed
 } // namespace torch

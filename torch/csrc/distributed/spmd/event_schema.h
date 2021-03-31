@@ -8,7 +8,12 @@ enum EventType {
   PREPARE_MODULE = 0,
   PRE_FORWARD = 1,
   POST_FORWARD = 2,
-  GRAD_READY = 3,
+  PRE_BACKWARD = 4,
+  GRAD_READY = 5,
+  BUCKET_CONTENT_READY = 6,
+  BUCKET_TENSOR_READY = 7,
+  COMM_DONE = 8,
+  POST_BACKWARD = 9,
 };
 
 struct EventSchema {
