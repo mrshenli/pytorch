@@ -62,6 +62,26 @@ class LocalGradReadyEvent : public Event {
   at::Tensor& grad_;
 };
 
+class BucketReadyEvent : public Event {
+ public:
+  BucketReadyEvent(size_t index, at::Tensor& bucket)
+      : Event(EventSchema(EventType::BUCKET_READY)),
+        index_(index),
+        bucket_(bucket) {}
+
+  at::Tensor& bucket() {
+    return bucket_;
+  }
+
+  size_t index() const {
+    return index_;
+  }
+
+ private:
+  const size_t index_;
+  at::Tensor& bucket_;
+};
+
 } // spmd
 } // distributed
 } // torch

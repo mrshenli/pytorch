@@ -66,7 +66,7 @@ class DefaultTrigger : public EventHandler {
             c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event));
       }
       default:
-        return {};
+        TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
     }
   }
 
@@ -91,7 +91,6 @@ class DefaultTrigger : public EventHandler {
               [this, index, localGradReadyFuture=futures.back()](
                   const torch::autograd::variable_list& outputs,
                   const torch::autograd::variable_list& /* unused */) {
-                std::cout << "??? running hook\n" << std::endl;
                 auto lgr = c10::make_intrusive<LocalGradReadyEvent>(
                     index, params_[index].mutable_grad());
 
@@ -100,7 +99,6 @@ class DefaultTrigger : public EventHandler {
                 return outputs;
               }));
       gradAccumulators_.push_back(std::move(gradAccumulator));
-      //std::cout << "==== inserted one hook for param " << index << std::endl << std::flush;
     }
     return futures;
   }
@@ -116,10 +114,8 @@ class DefaultBucketer : public EventHandler {
   // E.g., LOCAL_GRAD_READY -> BUCKET_READY; COMM_DONE -> GLOBAL_GRAD_READY,
   // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
   std::vector<EventSchema> ingressEvents() override {
-    return {
-        EventType::PREPARE_MODULE,
-        EventType::LOCAL_GRAD_READY,
-        EventType::COMM_DONE};
+    // FIXME: consume PREPARE_MODULE to allocate buckets
+    return {EventType::LOCAL_GRAD_READY, EventType::COMM_DONE};
   }
 
   std::vector<EventSchema> egressEvents() override {
@@ -129,55 +125,30 @@ class DefaultBucketer : public EventHandler {
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override {
     switch (event->schema().type_) {
-      case EventType::PREPARE_MODULE: {
-        auto pme =
-            c10::dynamic_intrusive_pointer_cast<PrepareModuleEvent>(event);
-        std::cout << "PREPARE_MODULE: " << pme->parameters().size() << std::endl << std::flush;
-        return {};
-      }
       case EventType::LOCAL_GRAD_READY: {
-        auto lgr = c10::dynamic_intrusive_pointer_cast<LocalGradReadyEvent>(event);
-        std::cout << "LOCAL_GRAD_READY: " << lgr->index() << ", " << lgr->grad() << std::endl << std::flush;
+        std::cout << "=== got LOCAL_GRAD_READY event " << std::endl << std::flush;
+        return handleLocalGradReady(
+            c10::static_intrusive_pointer_cast<LocalGradReadyEvent>(event));
       }
       default:
-        return {};
+        TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
     }
   }
-};
 
-/*
-class DefaultBucketIndexer : public EventHandler {
- public:
-  std::vector<EventSchema> ingressEvents() override {
-    return {EventType::GRAD_READY, EventType::COMM_DONE};
-  }
+ private:
 
-  std::vector<EventSchema> egressEvents() override {
-    return {EventType::BUCKET_CONTENT_READY};
-  }
-
-  std::vector<std::shared_ptr<Future>> handleEvent(
-      const c10::intrusive_ptr<Event>&) override {
-    TORCH_INTERNAL_ASSERT(false);
+  std::vector<std::shared_ptr<Future>> handleLocalGradReady(
+      c10::intrusive_ptr<LocalGradReadyEvent> event) {
+    auto future = std::make_shared<Future>(at::AnyClassType::get());
+    auto br = c10::make_intrusive<BucketReadyEvent>(event->index(), event->grad());
+    future->markCompleted(IValue(c10::static_intrusive_pointer_cast<Event>(br)));
+    std::vector<std::shared_ptr<Future>> futures;
+    futures.reserve(1);
+    futures.emplace_back(std::move(future));
+    std::cout << "=== bucket ready event for " << br->index() << std::endl << std::flush;
+    return futures;
   }
 };
-
-class DefaultBucketAllocator : public EventHandler {
- public:
-  std::vector<EventSchema> ingressEvents() override {
-    return {EventType::PREPARE_MODULE, EventType::BUCKET_CONTENT_READY};
-  }
-
-  std::vector<EventSchema> egressEvents() override {
-    return {EventType::BUCKET_TENSOR_READY};
-  }
-
-  std::vector<std::shared_ptr<Future>> handleEvent(
-      const c10::intrusive_ptr<Event>&) override {
-    TORCH_INTERNAL_ASSERT(false);
-  }
-};
-*/
 
 class AllReduceComm : public EventHandler {
  public:

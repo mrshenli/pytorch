@@ -20,6 +20,8 @@ static const auto prepareModuleEvent =
     torch::class_<PrepareModuleEvent>("spmd", "_PrepareModuleEvent");
 static const auto localgradReadyEvent =
     torch::class_<LocalGradReadyEvent>("spmd", "_LocalGradReadyEvent");
+static const auto bucketReadyEvent =
+    torch::class_<BucketReadyEvent>("spmd", "_BucketReadyEvent");
 
 } // namespace
 

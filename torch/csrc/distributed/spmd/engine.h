@@ -116,7 +116,6 @@ class Engine {
     std::cout << "got event " << event->schema().type_ << ", registered events? " << eventNodes_.size()
               << ", found it? " << (iter != eventNodes_.end()) << std::endl << std::flush;
     if (iter != eventNodes_.end()) {
-      std::cout << "==== yep, found it\n" << std::flush;
       for (auto& node : iter->second->nextEdges_) {
         auto handlerNode = std::static_pointer_cast<HandlerNode>(node);
         for (auto& futureEvent: handlerNode->handler_->handleEvent(event)) {
