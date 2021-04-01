@@ -35,3 +35,7 @@ class EngineTest(MultiProcessTestCase):
         engine = Engine([DefaultTrigger(), DefaultBucketer()])
 
         engine.prepare_module(list(net.parameters()))
+        print("before iteration")
+        net(torch.zeros(10, 10)).sum().backward()
+        print("after iteration")
+        print(net.bias.grad)

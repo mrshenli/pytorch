@@ -71,26 +71,35 @@ class DefaultTrigger : public EventHandler {
  private:
   std::vector<std::shared_ptr<Future>> handlePrepareModule(
       c10::intrusive_ptr<PrepareModuleEvent> event) {
-    std::cout << "PREPARE_MODULE: " << event->parameters().size() << std::endl << std::flush;
+    std::cout << "PREPARE_MODULE: " << event->parameters().size()
+              << ", inserting hooks!" << std::endl << std::flush;
 
     const auto& params = event->parameters();
     for (size_t index = 0; index < params.size(); ++index) {
       auto& param = params[index];
 
+      auto grad_accumulator =
+          torch::autograd::impl::grad_accumulator(param);
       // Hook to execute after the gradient accumulator has executed.
-      torch::autograd::impl::grad_accumulator(param)->add_post_hook(
+      grad_accumulator->add_post_hook(
           torch::make_unique<torch::autograd::utils::LambdaPostHook>(
               [this, index](const torch::autograd::variable_list& outputs,
                   const torch::autograd::variable_list& /* unused */) {
-
+                std::cout << "??? running hook\n" << std::endl;
                 this->autograd_hook(index);
                 return outputs;
               }));
+      grad_accumulators_.push_back(std::move(grad_accumulator));
+      std::cout << "==== inserted one hook for param " << index << std::endl << std::flush;
     }
     return {};
   }
 
-  void autograd_hook(size_t index) {}
+  void autograd_hook(size_t index) {
+    std::cout << "!!!! autograd hook fired for param " << index << std::endl << std::flush;
+  }
+
+  std::vector<std::shared_ptr<torch::autograd::Node>> grad_accumulators_;
 };
 
 class DefaultBucketer : public EventHandler {
