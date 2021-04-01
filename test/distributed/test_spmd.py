@@ -4,8 +4,7 @@ from torch.testing._internal.common_distributed import (
 
 from torch.distributed.spmd import (
     AllReduceComm,
-    DefaultBucketAllocator,
-    DefaultBucketIndexer,
+    DefaultBucketer,
     DefaultTrigger,
     Engine,
 )
@@ -33,6 +32,6 @@ class EngineTest(MultiProcessTestCase):
     def test_engine(self):
         net = nn.Linear(10, 10)
 
-        engine = Engine([DefaultTrigger()])
+        engine = Engine([DefaultTrigger(), DefaultBucketer()])
 
         engine.prepare_module(list(net.parameters()))

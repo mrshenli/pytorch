@@ -5,6 +5,12 @@
 #include <vector>
 
 
+#include <torch/csrc/autograd/engine.h>
+#include <torch/csrc/autograd/functions/accumulate_grad.h>
+#include <torch/csrc/autograd/utils/lambda_post_hook.h>
+#include <torch/csrc/utils/memory.h>
+
+
 namespace torch {
 namespace distributed {
 namespace spmd {
@@ -47,7 +53,60 @@ class DefaultTrigger : public EventHandler {
   }
 
   std::vector<EventSchema> egressEvents() override {
-    return {EventType::GRAD_READY};
+    return {EventType::LOCAL_GRAD_READY};
+  }
+
+  std::vector<std::shared_ptr<Future>> handleEvent(
+      const c10::intrusive_ptr<Event>& event) override {
+    switch (event->schema().type_) {
+      case EventType::PREPARE_MODULE: {
+        return handlePrepareModule(
+            c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event));
+      }
+      default:
+        return {};
+    }
+  }
+
+ private:
+  std::vector<std::shared_ptr<Future>> handlePrepareModule(
+      c10::intrusive_ptr<PrepareModuleEvent> event) {
+    std::cout << "PREPARE_MODULE: " << event->parameters().size() << std::endl << std::flush;
+
+    const auto& params = event->parameters();
+    for (size_t index = 0; index < params.size(); ++index) {
+      auto& param = params[index];
+
+      // Hook to execute after the gradient accumulator has executed.
+      torch::autograd::impl::grad_accumulator(param)->add_post_hook(
+          torch::make_unique<torch::autograd::utils::LambdaPostHook>(
+              [this, index](const torch::autograd::variable_list& outputs,
+                  const torch::autograd::variable_list& /* unused */) {
+
+                this->autograd_hook(index);
+                return outputs;
+              }));
+    }
+    return {};
+  }
+
+  void autograd_hook(size_t index) {}
+};
+
+class DefaultBucketer : public EventHandler {
+ public:
+  // FIXME: we might need more advanced ingress/egress event specifications.
+  // E.g., LOCAL_GRAD_READY -> BUCKET_READY; COMM_DONE -> GLOBAL_GRAD_READY,
+  // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
+  std::vector<EventSchema> ingressEvents() override {
+    return {
+        EventType::PREPARE_MODULE,
+        EventType::LOCAL_GRAD_READY,
+        EventType::COMM_DONE};
+  }
+
+  std::vector<EventSchema> egressEvents() override {
+    return {EventType::BUCKET_READY, EventType::GLOBAL_GRAD_READY};
   }
 
   std::vector<std::shared_ptr<Future>> handleEvent(
@@ -65,6 +124,7 @@ class DefaultTrigger : public EventHandler {
   }
 };
 
+/*
 class DefaultBucketIndexer : public EventHandler {
  public:
   std::vector<EventSchema> ingressEvents() override {
@@ -96,11 +156,12 @@ class DefaultBucketAllocator : public EventHandler {
     TORCH_INTERNAL_ASSERT(false);
   }
 };
+*/
 
 class AllReduceComm : public EventHandler {
  public:
   std::vector<EventSchema> ingressEvents() override {
-    return {EventType::BUCKET_TENSOR_READY};
+    return {EventType::BUCKET_READY};
   }
 
   std::vector<EventSchema> egressEvents() override {

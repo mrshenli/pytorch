@@ -11,8 +11,9 @@ if is_available() and not torch._C._spmd_init():
 if is_available():
     from torch._C._distributed_spmd import (
         AllReduceComm,
-        DefaultBucketAllocator,
-        DefaultBucketIndexer,
+        #DefaultBucketAllocator,
+        #DefaultBucketIndexer,
+        DefaultBucketer,
         DefaultTrigger,
         Engine,
     )
