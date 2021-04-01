@@ -33,6 +33,6 @@ class EngineTest(MultiProcessTestCase):
     def test_engine(self):
         net = nn.Linear(10, 10)
 
-        engine = Engine([])
+        engine = Engine([DefaultTrigger()])
 
         engine.prepare_module(list(net.parameters()))

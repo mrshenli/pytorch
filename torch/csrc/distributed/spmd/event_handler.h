@@ -34,17 +34,8 @@ class RootHandler : public EventHandler {
   }
 
   std::vector<std::shared_ptr<Future>> handleEvent(
-      const c10::intrusive_ptr<Event>& event) override {
-    switch (event->schema().type_) {
-      case EventType::PREPARE_MODULE: {
-        auto pme =
-            c10::dynamic_intrusive_pointer_cast<PrepareModuleEvent>(event);
-        std::cout << "PREPARE_MODULE: " << pme->parameters().size() << std::endl << std::flush;
-        return {};
-      }
-      default:
-        return {};
-    }
+      const c10::intrusive_ptr<Event>& /* unused */) override {
+    TORCH_INTERNAL_ASSERT(false);
   }
 };
 
@@ -60,8 +51,17 @@ class DefaultTrigger : public EventHandler {
   }
 
   std::vector<std::shared_ptr<Future>> handleEvent(
-      const c10::intrusive_ptr<Event>&) override {
-    TORCH_INTERNAL_ASSERT(false);
+      const c10::intrusive_ptr<Event>& event) override {
+    switch (event->schema().type_) {
+      case EventType::PREPARE_MODULE: {
+        auto pme =
+            c10::dynamic_intrusive_pointer_cast<PrepareModuleEvent>(event);
+        std::cout << "PREPARE_MODULE: " << pme->parameters().size() << std::endl << std::flush;
+        return {};
+      }
+      default:
+        return {};
+    }
   }
 };
 
