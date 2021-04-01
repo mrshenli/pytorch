@@ -329,6 +329,7 @@ libtorch_distributed_sources = [
     "torch/csrc/distributed/rpc/utils.cpp",
     "torch/csrc/distributed/rpc/metrics/registry.cpp",
     "torch/csrc/distributed/spmd/engine.cpp",
+    "torch/csrc/distributed/spmd/event.cpp",
 ]
 
 jit_sources_full = [

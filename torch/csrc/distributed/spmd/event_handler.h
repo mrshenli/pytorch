@@ -4,11 +4,12 @@
 
 #include <vector>
 
-
+#include <ATen/core/ivalue.h>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/functions/accumulate_grad.h>
 #include <torch/csrc/autograd/utils/lambda_post_hook.h>
 #include <torch/csrc/utils/memory.h>
+
 
 
 namespace torch {
@@ -16,6 +17,7 @@ namespace distributed {
 namespace spmd {
 
 using c10::ivalue::Future;
+using c10::IValue;
 
 class EventHandler {
  public:
@@ -74,33 +76,38 @@ class DefaultTrigger : public EventHandler {
     std::cout << "PREPARE_MODULE: " << event->parameters().size()
               << ", inserting hooks!" << std::endl << std::flush;
 
-    const auto& params = event->parameters();
-    for (size_t index = 0; index < params.size(); ++index) {
-      auto& param = params[index];
+    params_ = event->parameters();
+    std::vector<std::shared_ptr<Future>> futures;
+    futures.reserve(params_.size());
+    for (size_t index = 0; index < params_.size(); ++index) {
+      auto& param = params_[index];
+      futures.emplace_back(std::make_shared<Future>(at::AnyClassType::get()));
 
-      auto grad_accumulator =
+      auto gradAccumulator =
           torch::autograd::impl::grad_accumulator(param);
       // Hook to execute after the gradient accumulator has executed.
-      grad_accumulator->add_post_hook(
+      gradAccumulator->add_post_hook(
           torch::make_unique<torch::autograd::utils::LambdaPostHook>(
-              [this, index](const torch::autograd::variable_list& outputs,
+              [this, index, localGradReadyFuture=futures.back()](
+                  const torch::autograd::variable_list& outputs,
                   const torch::autograd::variable_list& /* unused */) {
                 std::cout << "??? running hook\n" << std::endl;
-                this->autograd_hook(index);
+                auto lgr = c10::make_intrusive<LocalGradReadyEvent>(
+                    index, params_[index].mutable_grad());
+
+                localGradReadyFuture->markCompleted(
+                    IValue(c10::static_intrusive_pointer_cast<Event>(lgr)));
                 return outputs;
               }));
-      grad_accumulators_.push_back(std::move(grad_accumulator));
-      std::cout << "==== inserted one hook for param " << index << std::endl << std::flush;
+      gradAccumulators_.push_back(std::move(gradAccumulator));
+      //std::cout << "==== inserted one hook for param " << index << std::endl << std::flush;
     }
-    return {};
-  }
-
-  void autograd_hook(size_t index) {
-    std::cout << "!!!! autograd hook fired for param " << index << std::endl << std::flush;
+    return futures;
   }
 
   // keep grad accumulators alive
-  std::vector<std::shared_ptr<torch::autograd::Node>> grad_accumulators_;
+  std::vector<std::shared_ptr<torch::autograd::Node>> gradAccumulators_;
+  std::vector<at::Tensor> params_;
 };
 
 class DefaultBucketer : public EventHandler {
@@ -127,6 +134,10 @@ class DefaultBucketer : public EventHandler {
             c10::dynamic_intrusive_pointer_cast<PrepareModuleEvent>(event);
         std::cout << "PREPARE_MODULE: " << pme->parameters().size() << std::endl << std::flush;
         return {};
+      }
+      case EventType::LOCAL_GRAD_READY: {
+        auto lgr = c10::dynamic_intrusive_pointer_cast<LocalGradReadyEvent>(event);
+        std::cout << "LOCAL_GRAD_READY: " << lgr->index() << ", " << lgr->grad() << std::endl << std::flush;
       }
       default:
         return {};
