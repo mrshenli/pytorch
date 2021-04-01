@@ -22,6 +22,8 @@ static const auto localgradReadyEvent =
     torch::class_<LocalGradReadyEvent>("spmd", "_LocalGradReadyEvent");
 static const auto bucketReadyEvent =
     torch::class_<BucketReadyEvent>("spmd", "_BucketReadyEvent");
+static const auto commDoneEvent =
+    torch::class_<CommDoneEvent>("spmd", "_CommDoneEvent");
 
 } // namespace
 

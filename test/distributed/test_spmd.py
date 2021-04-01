@@ -32,7 +32,7 @@ class EngineTest(MultiProcessTestCase):
     def test_engine(self):
         net = nn.Linear(10, 10)
 
-        engine = Engine([DefaultTrigger(), DefaultBucketer()])
+        engine = Engine([DefaultTrigger(), DefaultBucketer(), AllReduceComm()])
 
         engine.prepare_module(list(net.parameters()))
         print("before iteration")

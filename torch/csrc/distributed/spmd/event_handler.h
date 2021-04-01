@@ -161,8 +161,22 @@ class AllReduceComm : public EventHandler {
   }
 
   std::vector<std::shared_ptr<Future>> handleEvent(
-      const c10::intrusive_ptr<Event>&) override {
-    TORCH_INTERNAL_ASSERT(false);
+      const c10::intrusive_ptr<Event>& event) override {
+    switch (event->schema().type_) {
+      case EventType::BUCKET_READY: {
+        std::cout << "=== got BUCKET_READY event " << std::endl << std::flush;
+        return handleBucketReady(
+            c10::static_intrusive_pointer_cast<BucketReadyEvent>(event));
+      }
+      default:
+        TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
+    }
+  }
+
+ private:
+  std::vector<std::shared_ptr<Future>> handleBucketReady(
+      c10::intrusive_ptr<BucketReadyEvent> event) {
+    return {};
   }
 };
 

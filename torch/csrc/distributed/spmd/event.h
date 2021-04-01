@@ -82,6 +82,26 @@ class BucketReadyEvent : public Event {
   at::Tensor& bucket_;
 };
 
+class CommDoneEvent : public Event {
+ public:
+  CommDoneEvent(size_t index, at::Tensor& bucket)
+      : Event(EventSchema(EventType::COMM_DONE)),
+        index_(index),
+        bucket_(bucket) {}
+
+  at::Tensor& bucket() {
+    return bucket_;
+  }
+
+  size_t index() const {
+    return index_;
+  }
+
+ private:
+  const size_t index_;
+  at::Tensor& bucket_;
+};
+
 } // spmd
 } // distributed
 } // torch
