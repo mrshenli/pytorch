@@ -42,6 +42,24 @@ class PrepareModuleEvent : public Event {
   std::vector<at::Tensor> params_;
 };
 
+class GradReadyEvent : public Event {
+ public:
+  GradReadyEvent(size_t index, at::Tensor grad)
+      : index_(index), grad_(std::move(grad)) {}
+
+  const at::Tensor& grad() const {
+    return grad_;
+  }
+
+  size_t index() const {
+    return index_;
+  }
+
+ private:
+  const size_t index_;
+  const at::Tensor grad_;
+};
+
 } // spmd
 } // distributed
 } // torch

@@ -99,6 +99,7 @@ class DefaultTrigger : public EventHandler {
     std::cout << "!!!! autograd hook fired for param " << index << std::endl << std::flush;
   }
 
+  // keep grad accumulators alive
   std::vector<std::shared_ptr<torch::autograd::Node>> grad_accumulators_;
 };
 
