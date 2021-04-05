@@ -2,6 +2,7 @@
 
 #include <torch/csrc/distributed/spmd/event.h>
 #include <torch/csrc/distributed/spmd/event_handler.h>
+#include <torch/csrc/distributed/spmd/event_handler_impl.h>
 
 #include <unordered_map>
 #include <unordered_set>
