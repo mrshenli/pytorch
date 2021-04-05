@@ -1,6 +1,7 @@
 #include <torch/csrc/python_headers.h>
 
 #include <torch/csrc/distributed/spmd/engine.h>
+#include <torch/csrc/distributed/spmd/event_handler_impl.h>
 #include <torch/csrc/utils/pybind.h>
 
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <torch/csrc/distributed/spmd/event_handler.h>
-
+#include <torch/csrc/distributed/spmd/event_impl.h>
 
 namespace torch {
 namespace distributed {
@@ -46,7 +46,6 @@ class TORCH_API DefaultBucketer : public EventHandler {
   // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
   std::vector<EventSchema> ingressEvents() override;
   std::vector<EventSchema> egressEvents() override;
-
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override;
 
