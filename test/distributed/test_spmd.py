@@ -11,8 +11,10 @@ from torch.distributed.spmd import (
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torch.distributed as c10d
 
+import copy
 import os
 
 class EngineTest(MultiProcessTestCase):
@@ -31,17 +33,36 @@ class EngineTest(MultiProcessTestCase):
         return 2
 
     def test_engine(self):
+        torch.manual_seed(0)
+
         store = c10d.FileStore(self.file_name, self.world_size)
         pg = c10d.ProcessGroupGloo(store, self.rank, self.world_size)
 
         net = nn.Linear(10, 10)
+        ddp = copy.deepcopy(net)
 
-        engine = Engine(
-            [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
-        )
+        opt_net = optim.SGD(net.parameters(), lr=0.1)
+        opt_ddp = optim.SGD(ddp.parameters(), lr=0.1)
 
-        engine.prepare_module(list(net.parameters()))
-        print("before iteration")
-        net(torch.zeros(10, 10)).sum().backward()
-        print("after iteration")
-        print(net.bias.grad)
+        for _ in range(3):
+            inputs = torch.randn(10, 10)
+
+            # run ddp
+            ddp_inputs = inputs.chunk(self.world_size)
+            engine = Engine(
+                [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
+            )
+            engine.prepare_module(list(ddp.parameters()))
+            ddp(ddp_inputs[self.rank]).sum().backward()
+
+            # run local model
+            net(inputs).sum().backward()
+
+            # verify grads
+            for p_net, p_ddp in zip(net.parameters(), ddp.parameters()):
+                self.assertEqual(p_net.grad, p_ddp.grad)
+
+            opt_net.step()
+            opt_ddp.step
+            opt_net.zero_grad()
+            opt_ddp.zero_grad()
