@@ -105,16 +105,26 @@ class DefaultTrigger : public EventHandler {
               [this, index, localGradReadyFuture=futures.back()](
                   const torch::autograd::variable_list& outputs,
                   const torch::autograd::variable_list& /* unused */) {
-                auto lgr = c10::make_intrusive<LocalGradReadyEvent>(
-                    index, params_[index].mutable_grad());
-
-                localGradReadyFuture->markCompleted(
-                    IValue(c10::static_intrusive_pointer_cast<Event>(lgr)));
+                autogradHook(index, localGradReadyFuture);
                 return outputs;
               }));
       gradAccumulators_.push_back(std::move(gradAccumulator));
     }
     return futures;
+  }
+
+  void autogradHook(
+      size_t index,
+      const std::shared_ptr<Future>& localGradReadyFuture) {
+    auto lgr = c10::make_intrusive<LocalGradReadyEvent>(
+        index, params_[index].mutable_grad());
+
+    localGradReadyFuture->markCompleted(
+        IValue(c10::static_intrusive_pointer_cast<Event>(lgr)));
+
+    if (index == 0) {
+
+    }
   }
 
   // keep grad accumulators alive
@@ -170,27 +180,28 @@ class DefaultBucketer : public EventHandler {
 
   std::vector<std::shared_ptr<Future>> handleLocalGradReady(
       c10::intrusive_ptr<LocalGradReadyEvent> event) {
+    std::vector<size_t> paramIndices;
+    paramIndices.reserve(1);
+    paramIndices.push_back(event->index());
+    auto bucket = std::make_shared<Bucket>(
+        event->index(), event->grad(), std::move(paramIndices));
     return createOneFutureEvent<BucketReadyEvent>(
-        c10::make_intrusive<BucketReadyEvent>(event->index(), event->grad()));
+        c10::make_intrusive<BucketReadyEvent>(std::move(bucket)));
   }
 
-/*non_blocking=*/
-/*
+
   std::vector<std::shared_ptr<Future>> handleCommDone(
       c10::intrusive_ptr<CommDoneEvent> event) {
-    if (event->bucket().data_ptr() != params_[event->index()].data_ptr()) {
-      params_.mutable_grad().copy_(event_bucket(), true);
+    const auto& bucket = event->bucket();
+    auto& grad = params_[bucket->index_].mutable_grad();
+    if (bucket->tensor_.data_ptr() != grad.data_ptr()) {
+      grad.copy_(bucket->tensor_, /*non_blocking=*/ true);
     }
 
-    auto ggr = c10::make_intrusive<GlobalGradReadyEvent>(event->index());
-    std::vector<std::shared_ptr<Future>> futures;
-    futures.reserve(1);
-    futures.emplace_back(
-        );
-    std::cout << "=== bucket ready event for " << br->index() << std::endl << std::flush;
-    return futures;
+    return createOneFutureEvent<GlobalGradReadyEvent>(
+        c10::make_intrusive<GlobalGradReadyEvent>(bucket->index_));
   }
-*/
+
   std::vector<at::Tensor> params_;
 };
 
@@ -223,12 +234,13 @@ class AllReduceComm : public EventHandler {
  private:
   std::vector<std::shared_ptr<Future>> handleBucketReady(
       c10::intrusive_ptr<BucketReadyEvent> event) {
-    std::vector<at::Tensor> bucket;
-    bucket.reserve(1);
-    bucket.push_back(event->bucket());
-    pg_->allreduce(bucket)->wait();
+    const auto& bucket = event->bucket();
+    std::vector<at::Tensor> buffers;
+    buffers.reserve(1);
+    buffers.push_back(bucket->tensor_);
+    pg_->allreduce(buffers)->wait();
     return createOneFutureEvent<CommDoneEvent>(
-        c10::make_intrusive<CommDoneEvent>(event->index(), event->bucket()));
+        c10::make_intrusive<CommDoneEvent>(bucket));
   }
 
   const c10::intrusive_ptr<c10d::ProcessGroup> pg_;

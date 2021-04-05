@@ -62,44 +62,46 @@ class LocalGradReadyEvent : public Event {
   const at::Tensor& grad_;
 };
 
+struct Bucket final {
+  Bucket(
+      size_t index,
+      const at::Tensor tensor,
+      std::vector<size_t> paramIndices)
+      : index_(index),
+        tensor_(std::move(tensor)),
+        paramIndices_(paramIndices) {}
+
+  const size_t index_;
+  const at::Tensor tensor_;
+  const std::vector<size_t> paramIndices_;
+};
+
 class BucketReadyEvent : public Event {
  public:
-  BucketReadyEvent(size_t index, const at::Tensor& bucket)
+  BucketReadyEvent(std::shared_ptr<Bucket> bucket)
       : Event(EventSchema(EventType::BUCKET_READY)),
-        index_(index),
-        bucket_(bucket) {}
+        bucket_(std::move(bucket)) {}
 
-  const at::Tensor& bucket() {
+  const  std::shared_ptr<Bucket>& bucket() const {
     return bucket_;
   }
 
-  size_t index() const {
-    return index_;
-  }
-
  private:
-  const size_t index_;
-  const at::Tensor& bucket_;
+  const std::shared_ptr<Bucket> bucket_;
 };
 
 class CommDoneEvent : public Event {
  public:
-  CommDoneEvent(size_t index, const at::Tensor& bucket)
+  CommDoneEvent(std::shared_ptr<Bucket> bucket)
       : Event(EventSchema(EventType::COMM_DONE)),
-        index_(index),
-        bucket_(bucket) {}
+        bucket_(std::move(bucket)) {}
 
-  const at::Tensor& bucket() {
+  const  std::shared_ptr<Bucket>& bucket() const {
     return bucket_;
   }
 
-  size_t index() const {
-    return index_;
-  }
-
  private:
-  const size_t index_;
-  const at::Tensor& bucket_;
+  const std::shared_ptr<Bucket> bucket_;
 };
 
 class GlobalGradReadyEvent : public Event {
