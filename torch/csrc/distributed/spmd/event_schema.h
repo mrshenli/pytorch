@@ -4,17 +4,13 @@ namespace torch {
 namespace distributed {
 namespace spmd {
 
+// TODO: add PRE_FORWARD, POST_FORWARD, PRE_BACKWARD, and POST_BACKWARD
 enum EventType {
   PREPARE_MODULE = 0,
-  PRE_FORWARD = 1,
-  POST_FORWARD = 2,
-  PRE_BACKWARD = 4,
-  LOCAL_GRAD_READY = 5,
-  //BUCKET_CONTENT_READY = 6,
-  //BUCKET_TENSOR_READY = 7,
-  BUCKET_READY = 6,
-  COMM_DONE = 8,
-  GLOBAL_GRAD_READY = 9,
+  LOCAL_GRAD_READY = 1,
+  BUCKET_READY = 2,
+  COMM_DONE = 3,
+  GLOBAL_GRAD_READY = 4,
 };
 
 struct EventSchema {

@@ -30,10 +30,8 @@ std::vector<EventSchema> RootHandler::ingressEvents() {
 }
 
 std::vector<EventSchema> RootHandler::egressEvents() {
-  return {
-      EventType::PREPARE_MODULE,
-      EventType::PRE_FORWARD,
-      EventType::POST_FORWARD};
+  // TODO: add PRE_FORWARD and POST_FORWARD
+  return {EventType::PREPARE_MODULE};
 }
 
 std::vector<std::shared_ptr<Future>> RootHandler::handleEvent(
