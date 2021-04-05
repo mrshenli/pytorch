@@ -44,12 +44,12 @@ class PrepareModuleEvent : public Event {
 
 class LocalGradReadyEvent : public Event {
  public:
-  LocalGradReadyEvent(size_t index, at::Tensor& grad)
+  LocalGradReadyEvent(size_t index, const at::Tensor& grad)
       : Event(EventSchema(EventType::LOCAL_GRAD_READY)),
         index_(index),
         grad_(grad) {}
 
-  at::Tensor& grad() {
+  const at::Tensor& grad() {
     return grad_;
   }
 
@@ -59,17 +59,17 @@ class LocalGradReadyEvent : public Event {
 
  private:
   const size_t index_;
-  at::Tensor& grad_;
+  const at::Tensor& grad_;
 };
 
 class BucketReadyEvent : public Event {
  public:
-  BucketReadyEvent(size_t index, at::Tensor& bucket)
+  BucketReadyEvent(size_t index, const at::Tensor& bucket)
       : Event(EventSchema(EventType::BUCKET_READY)),
         index_(index),
         bucket_(bucket) {}
 
-  at::Tensor& bucket() {
+  const at::Tensor& bucket() {
     return bucket_;
   }
 
@@ -79,17 +79,17 @@ class BucketReadyEvent : public Event {
 
  private:
   const size_t index_;
-  at::Tensor& bucket_;
+  const at::Tensor& bucket_;
 };
 
 class CommDoneEvent : public Event {
  public:
-  CommDoneEvent(size_t index, at::Tensor& bucket)
+  CommDoneEvent(size_t index, const at::Tensor& bucket)
       : Event(EventSchema(EventType::COMM_DONE)),
         index_(index),
         bucket_(bucket) {}
 
-  at::Tensor& bucket() {
+  const at::Tensor& bucket() {
     return bucket_;
   }
 
@@ -99,7 +99,21 @@ class CommDoneEvent : public Event {
 
  private:
   const size_t index_;
-  at::Tensor& bucket_;
+  const at::Tensor& bucket_;
+};
+
+class GlobalGradReadyEvent : public Event {
+ public:
+  GlobalGradReadyEvent(size_t index)
+      : Event(EventSchema(EventType::LOCAL_GRAD_READY)),
+        index_(index) {}
+
+  size_t index() const {
+    return index_;
+  }
+
+ private:
+  const size_t index_;
 };
 
 } // spmd

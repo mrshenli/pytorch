@@ -5,11 +5,11 @@
 #include <vector>
 
 #include <ATen/core/ivalue.h>
+#include <c10d/ProcessGroup.hpp>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/functions/accumulate_grad.h>
 #include <torch/csrc/autograd/utils/lambda_post_hook.h>
 #include <torch/csrc/utils/memory.h>
-
 
 
 namespace torch {
@@ -18,6 +18,20 @@ namespace spmd {
 
 using c10::ivalue::Future;
 using c10::IValue;
+
+namespace {
+
+template <class T>
+std::vector<std::shared_ptr<Future>> createOneFutureEvent(c10::intrusive_ptr<T> event) {
+    auto future = std::make_shared<Future>(at::AnyClassType::get());
+    future->markCompleted(IValue(c10::static_intrusive_pointer_cast<Event>(event)));
+    std::vector<std::shared_ptr<Future>> futures;
+    futures.reserve(1);
+    futures.emplace_back(std::move(future));
+    return futures;
+}
+
+} // namespace
 
 class EventHandler {
  public:
@@ -115,7 +129,10 @@ class DefaultBucketer : public EventHandler {
   // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
   std::vector<EventSchema> ingressEvents() override {
     // FIXME: consume PREPARE_MODULE to allocate buckets
-    return {EventType::LOCAL_GRAD_READY, EventType::COMM_DONE};
+    return {
+        EventType::PREPARE_MODULE,
+        EventType::LOCAL_GRAD_READY,
+        EventType::COMM_DONE};
   }
 
   std::vector<EventSchema> egressEvents() override {
@@ -125,10 +142,18 @@ class DefaultBucketer : public EventHandler {
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override {
     switch (event->schema().type_) {
+      case EventType::PREPARE_MODULE: {
+        return handlePrepareModule(
+            c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event));
+      }
       case EventType::LOCAL_GRAD_READY: {
         std::cout << "=== got LOCAL_GRAD_READY event " << std::endl << std::flush;
         return handleLocalGradReady(
             c10::static_intrusive_pointer_cast<LocalGradReadyEvent>(event));
+      }
+      case EventType::COMM_DONE: {
+        std::cout << "=== get COMM_DONE " << std::endl << std::flush;
+        return {};
       }
       default:
         TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
@@ -137,21 +162,43 @@ class DefaultBucketer : public EventHandler {
 
  private:
 
+  std::vector<std::shared_ptr<Future>> handlePrepareModule(
+      c10::intrusive_ptr<PrepareModuleEvent> event) {
+    params_ = event->parameters();
+    return {};
+  }
+
   std::vector<std::shared_ptr<Future>> handleLocalGradReady(
       c10::intrusive_ptr<LocalGradReadyEvent> event) {
-    auto future = std::make_shared<Future>(at::AnyClassType::get());
-    auto br = c10::make_intrusive<BucketReadyEvent>(event->index(), event->grad());
-    future->markCompleted(IValue(c10::static_intrusive_pointer_cast<Event>(br)));
+    return createOneFutureEvent<BucketReadyEvent>(
+        c10::make_intrusive<BucketReadyEvent>(event->index(), event->grad()));
+  }
+
+/*non_blocking=*/
+/*
+  std::vector<std::shared_ptr<Future>> handleCommDone(
+      c10::intrusive_ptr<CommDoneEvent> event) {
+    if (event->bucket().data_ptr() != params_[event->index()].data_ptr()) {
+      params_.mutable_grad().copy_(event_bucket(), true);
+    }
+
+    auto ggr = c10::make_intrusive<GlobalGradReadyEvent>(event->index());
     std::vector<std::shared_ptr<Future>> futures;
     futures.reserve(1);
-    futures.emplace_back(std::move(future));
+    futures.emplace_back(
+        );
     std::cout << "=== bucket ready event for " << br->index() << std::endl << std::flush;
     return futures;
   }
+*/
+  std::vector<at::Tensor> params_;
 };
 
 class AllReduceComm : public EventHandler {
  public:
+  AllReduceComm(c10::intrusive_ptr<c10d::ProcessGroup> pg)
+      : pg_(std::move(pg)) {}
+
   std::vector<EventSchema> ingressEvents() override {
     return {EventType::BUCKET_READY};
   }
@@ -176,8 +223,15 @@ class AllReduceComm : public EventHandler {
  private:
   std::vector<std::shared_ptr<Future>> handleBucketReady(
       c10::intrusive_ptr<BucketReadyEvent> event) {
-    return {};
+    std::vector<at::Tensor> bucket;
+    bucket.reserve(1);
+    bucket.push_back(event->bucket());
+    pg_->allreduce(bucket)->wait();
+    return createOneFutureEvent<CommDoneEvent>(
+        c10::make_intrusive<CommDoneEvent>(event->index(), event->bucket()));
   }
+
+  const c10::intrusive_ptr<c10d::ProcessGroup> pg_;
 };
 
 

@@ -11,6 +11,7 @@ from torch.distributed.spmd import (
 
 import torch
 import torch.nn as nn
+import torch.distributed as c10d
 
 import os
 
@@ -30,9 +31,14 @@ class EngineTest(MultiProcessTestCase):
         return 2
 
     def test_engine(self):
+        store = c10d.FileStore(self.file_name, self.world_size)
+        pg = c10d.ProcessGroupGloo(store, self.rank, self.world_size)
+
         net = nn.Linear(10, 10)
 
-        engine = Engine([DefaultTrigger(), DefaultBucketer(), AllReduceComm()])
+        engine = Engine(
+            [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
+        )
 
         engine.prepare_module(list(net.parameters()))
         print("before iteration")

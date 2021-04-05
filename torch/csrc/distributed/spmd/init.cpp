@@ -53,7 +53,9 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
 
   shared_ptr_class_<AllReduceComm>(
       module, "AllReduceComm", eventHandler)
-      .def(py::init<>());
+      .def(
+          py::init<c10::intrusive_ptr<::c10d::ProcessGroup>>(),
+          py::arg("process_group"));
 
   shared_ptr_class_<Engine>(module, "Engine")
       .def(
