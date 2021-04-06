@@ -8,10 +8,11 @@ namespace spmd {
 enum EventType {
   PREPARE_MODULE = 0,
   PRE_FORWARD = 1,
-  LOCAL_GRAD_READY = 2,
-  BUCKET_READY = 3,
-  COMM_DONE = 4,
-  GLOBAL_GRAD_READY = 5,
+  POST_FORWARD = 2,
+  LOCAL_GRAD_READY = 3,
+  BUCKET_READY = 4,
+  COMM_DONE = 5,
+  GLOBAL_GRAD_READY = 6,
 };
 
 struct EventSchema {

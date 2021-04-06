@@ -74,3 +74,12 @@ class EngineTest(MultiProcessTestCase):
             opt_ddp.step
             opt_net.zero_grad()
             opt_ddp.zero_grad()
+
+    def test_invalid_event_graph(self):
+        store = c10d.FileStore(self.file_name, self.world_size)
+        pg = c10d.ProcessGroupGloo(store, self.rank, self.world_size)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "Invalid Event Handling Graph"
+        ):
+            engine = Engine([DefaultTrigger(), AllReduceComm(pg)])

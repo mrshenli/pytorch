@@ -70,7 +70,9 @@ Engine::Engine(std::vector<std::shared_ptr<EventHandler>> handlers)
 
     std::cout << "seen = " << seen.size() << ", eventNodes_.size = " << eventNodes_.size()
             << ", handlerNodes = " << handlerNodes.size() << std::endl << std::flush;
-    TORCH_CHECK(seen.size() == eventNodes_.size() + handlerNodes.size());
+    TORCH_CHECK(
+        seen.size() == eventNodes_.size() + handlerNodes.size(),
+        "Invalid Event Handling Graph.");
   }
 }
 
