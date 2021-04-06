@@ -46,34 +46,52 @@ namespace spmd {
 class TORCH_API Engine {
  public:
 
+  // Construct and verifies the event-handling graph using the given handlers.
   explicit Engine(std::vector<std::shared_ptr<EventHandler>> handlers);
+
+  // Produces type I event PREPARE_MODULE
   void prepareModule(std::vector<at::Tensor> parameters);
+
+  // Produces type I event PRE_FORWARD
   void preForward();
 
  private:
 
+  // Node base class for the event-handling graph
   struct Node {
     std::vector<std::shared_ptr<Node>> nextEdges_;
   };
 
+  // Node derived class of an EventHandler
   struct HandlerNode : Node {
     explicit HandlerNode(std::shared_ptr<EventHandler> handler)
         : handler_(std::move(handler)) {}
     const std::shared_ptr<EventHandler> handler_;
   };
 
+  // Node derived class of an Event
   struct EventNode : Node {
     explicit EventNode(EventSchema schema)
         : schema_(std::move(schema)) {}
     const EventSchema schema_;
   };
 
+  // Recursively processes Events and routes Events to corresponding
+  // EventHandlers using the event-handling graph.
+  //
   // NB: this function is thread-safe as it only reads eventNodes_. However, if
   // an EventHandler is not thread-safe, that EventHandler should use locks
   // accordingly.
   void processEvent(const c10::intrusive_ptr<Event>& event);
 
-  std::unordered_map<EventSchema, std::shared_ptr<EventNode>, EventSchema::Hash> eventNodes_;
+  // A map from EventSchema to EventNode. When an Event is generated, the
+  // engine uses this map to find the EventNode and from EventNode the engine
+  // can then find the HandlerNode. I.e., this is how we store the bipartite
+  // event-handling graph.
+  std::unordered_map<EventSchema,
+                     std::shared_ptr<EventNode>,
+                     EventSchema::Hash> eventNodes_;
+  // All EventHandlers
   std::vector<std::shared_ptr<EventHandler>> handlers_;
 };
 
