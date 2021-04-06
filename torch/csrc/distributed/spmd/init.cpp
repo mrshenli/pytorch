@@ -16,7 +16,7 @@ using shared_ptr_class_ = py::class_<T, std::shared_ptr<T>>;
 
 PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
   auto spmd_module =
-      THPObjectPtr(PyImport_ImportModule("torch.distributed.spmd"));
+      THPObjectPtr(PyImport_ImportModule("torch.distributed._spmd"));
   if (!spmd_module) {
     throw python_error();
   }
@@ -41,16 +41,6 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
   shared_ptr_class_<DefaultBucketer>(
       module, "DefaultBucketer", eventHandler)
       .def(py::init<>());
-
-/*
-  shared_ptr_class_<DefaultBucketIndexer>(
-      module, "DefaultBucketIndexer", eventHandler)
-      .def(py::init<>());
-
-  shared_ptr_class_<DefaultBucketAllocator>(
-      module, "DefaultBucketAllocator", eventHandler)
-      .def(py::init<>());
-*/
 
   shared_ptr_class_<AllReduceComm>(
       module, "AllReduceComm", eventHandler)

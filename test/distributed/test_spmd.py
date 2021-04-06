@@ -2,7 +2,7 @@ from torch.testing._internal.common_distributed import (
     MultiProcessTestCase,
 )
 
-from torch.distributed.spmd import (
+from torch.distributed._spmd import (
     AllReduceComm,
     DefaultBucketer,
     DefaultTrigger,
