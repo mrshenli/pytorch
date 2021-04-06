@@ -12,18 +12,19 @@ namespace spmd {
 class TORCH_API RootHandler : public EventHandler {
  public:
   using EventHandler::EventHandler;
-  std::vector<EventSchema> ingressEvents() override;
-  std::vector<EventSchema> egressEvents() override;
+  std::vector<EventSchema> ingressEvents() const override;
+  std::vector<EventSchema> egressEvents() const override;
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& /* unused */) override;
 };
 
 // WIP DefaultTrigger
+// TODO:
 class TORCH_API DefaultTrigger : public EventHandler {
  public:
   using EventHandler::EventHandler;
-  std::vector<EventSchema> ingressEvents() override;
-  std::vector<EventSchema> egressEvents() override;
+  std::vector<EventSchema> ingressEvents() const override;
+  std::vector<EventSchema> egressEvents() const override;
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override;
 
@@ -49,8 +50,8 @@ class TORCH_API DefaultBucketer : public EventHandler {
   // FIXME: we might need more advanced ingress/egress event specifications.
   // E.g., LOCAL_GRAD_READY -> BUCKET_READY; COMM_DONE -> GLOBAL_GRAD_READY,
   // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
-  std::vector<EventSchema> ingressEvents() override;
-  std::vector<EventSchema> egressEvents() override;
+  std::vector<EventSchema> ingressEvents() const override;
+  std::vector<EventSchema> egressEvents() const override;
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override;
 
@@ -75,8 +76,8 @@ class TORCH_API AllReduceComm : public EventHandler {
   AllReduceComm(c10::intrusive_ptr<c10d::ProcessGroup> pg)
       : pg_(std::move(pg)) {}
 
-  std::vector<EventSchema> ingressEvents() override;
-  std::vector<EventSchema> egressEvents() override;
+  std::vector<EventSchema> ingressEvents() const override;
+  std::vector<EventSchema> egressEvents() const override;
   std::vector<std::shared_ptr<Future>> handleEvent(
       const c10::intrusive_ptr<Event>& event) override;
 

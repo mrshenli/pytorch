@@ -25,11 +25,11 @@ std::vector<std::shared_ptr<Future>> createOneFutureEvent(c10::intrusive_ptr<T> 
 //                           RootHandler                           //
 /////////////////////////////////////////////////////////////////////
 
-std::vector<EventSchema> RootHandler::ingressEvents() {
+std::vector<EventSchema> RootHandler::ingressEvents() const {
   return {};
 }
 
-std::vector<EventSchema> RootHandler::egressEvents() {
+std::vector<EventSchema> RootHandler::egressEvents() const {
   return {
       EventType::PREPARE_MODULE,
       EventType::PRE_FORWARD,
@@ -47,11 +47,11 @@ std::vector<std::shared_ptr<Future>> RootHandler::handleEvent(
 //                         DefaultTrigger                          //
 /////////////////////////////////////////////////////////////////////
 
-std::vector<EventSchema> DefaultTrigger::ingressEvents() {
+std::vector<EventSchema> DefaultTrigger::ingressEvents() const {
   return {EventType::PREPARE_MODULE, EventType::PRE_FORWARD};
 }
 
-std::vector<EventSchema> DefaultTrigger::egressEvents() {
+std::vector<EventSchema> DefaultTrigger::egressEvents() const {
   return {EventType::LOCAL_GRAD_READY};
 }
 
@@ -74,9 +74,6 @@ std::vector<std::shared_ptr<Future>> DefaultTrigger::handleEvent(
 
 std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePrepareModule(
     c10::intrusive_ptr<PrepareModuleEvent> event) {
-  std::cout << "PREPARE_MODULE: " << event->parameters().size()
-            << ", inserting hooks!" << std::endl << std::flush;
-
   params_ = event->parameters();
   for (size_t index = 0; index < params_.size(); ++index) {
     auto& param = params_[index];
@@ -123,7 +120,7 @@ void DefaultTrigger::autogradHook(size_t index) {
 // FIXME: we might need more advanced ingress/egress event specifications.
 // E.g., LOCAL_GRAD_READY -> BUCKET_READY; COMM_DONE -> GLOBAL_GRAD_READY,
 // otherwise, DefaultBucketer and AllReduceComm can form a cycle.
-std::vector<EventSchema> DefaultBucketer::ingressEvents() {
+std::vector<EventSchema> DefaultBucketer::ingressEvents() const {
   // FIXME: consume PREPARE_MODULE to allocate buckets
   return {
       EventType::PREPARE_MODULE,
@@ -131,7 +128,7 @@ std::vector<EventSchema> DefaultBucketer::ingressEvents() {
       EventType::COMM_DONE};
 }
 
-std::vector<EventSchema> DefaultBucketer::egressEvents() {
+std::vector<EventSchema> DefaultBucketer::egressEvents() const {
   return {EventType::BUCKET_READY, EventType::GLOBAL_GRAD_READY};
 }
 
@@ -150,7 +147,10 @@ std::vector<std::shared_ptr<Future>> DefaultBucketer::handleEvent(
       return {};
     }
     default:
-      TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
+      TORCH_INTERNAL_ASSERT(
+          false,
+          "DefaultBucketer unexcepted event type",
+          event->schema().type_);
   }
 }
 
@@ -191,11 +191,11 @@ std::vector<std::shared_ptr<Future>> DefaultBucketer::handleCommDone(
 //                         AllReduceComm                           //
 /////////////////////////////////////////////////////////////////////
 
-std::vector<EventSchema> AllReduceComm::ingressEvents() {
+std::vector<EventSchema> AllReduceComm::ingressEvents() const {
   return {EventType::BUCKET_READY};
 }
 
-std::vector<EventSchema> AllReduceComm::egressEvents() {
+std::vector<EventSchema> AllReduceComm::egressEvents() const {
   return {EventType::COMM_DONE};
 }
 
@@ -207,7 +207,10 @@ std::vector<std::shared_ptr<Future>> AllReduceComm::handleEvent(
           c10::static_intrusive_pointer_cast<BucketReadyEvent>(event));
     }
     default:
-      TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
+      TORCH_INTERNAL_ASSERT(
+          false,
+          "AllReduceComm unexcepted event type ",
+          event->schema().type_);
   }
 }
 
