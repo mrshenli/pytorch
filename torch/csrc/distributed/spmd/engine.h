@@ -14,14 +14,35 @@ namespace spmd {
 
 // The event-based engine that maintains the event-handling graph and routes
 // events to corresponding handlers properly.
+//
 // During construction, the Engine ctor takes a list of EventHandler instances.
 // Each EventHandler specifies its ingress and egress events. Based on that
 // information, the Engine builds a bipartite graph where the two sets of nodes
 // are distinct Events and EventHandlers respectively. An edge pointing from an
 // Event to an EventHandler means that the event is an ingress event for the
 // handler, while an edge pointing from an EventHandler to an Event means that
-// the event is an egress event from the handler.
-// NB: this engine
+// the event is an egress event from the handler. The figure below depicts an
+// example snippet of a event-handling graph.
+//
+//      RootHandler    /-> DefaultTrigger  /-> DefaultBucketer   AllReduceComm
+//           |  \     /       ^     \     /         ^     \           ^
+//           |   \   /        |      \   /          |      \          |
+//           |    \ /         |       \ /           |       \         |
+//           |     X          |        X            |        \        |
+//           V    / \         |       / \           |         \       |
+//      PRE_FORWARD  \-> PREPARE_MODULE  \-> LOCAL_GRAD_READY  \-> BUCKET_READY
+//
+//
+// The same Event instance can be consumed by multiple EventHandlers, e.g.,
+// PREPARE_MODULE is consumed by both DefaultTrigger and DefaultBucketer.
+// An EventHandler can consume and produce multiple types of Events, e.g.,
+// RootHandler produces PREPARE_MODULE and PRE_FORWARD, and DefaultTrigger
+// consumes PREPARE_MODULE and PRE_FORWARD.
+//
+// NB: In the current implementation, RootHandler produces type I events,
+// namely, PREPARE_MODULE, PRE_FORWARD, and POST_FORWARD. All other Events and
+// EventHandlers must be reacheable from type I Events. Otherwise, the graph
+// is considered invalid, and Engine ctor will throw.
 class TORCH_API Engine {
  public:
 
