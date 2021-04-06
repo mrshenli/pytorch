@@ -3,6 +3,7 @@
 #include <c10/util/Exception.h>
 #include <torch/csrc/distributed/spmd/event.h>
 
+// This file contains implementations of all specific Event classes.
 
 namespace torch {
 namespace distributed {

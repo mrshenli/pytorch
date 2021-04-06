@@ -38,7 +38,9 @@ std::vector<EventSchema> RootHandler::egressEvents() {
 
 std::vector<std::shared_ptr<Future>> RootHandler::handleEvent(
     const c10::intrusive_ptr<Event>& /* unused */) {
-  TORCH_INTERNAL_ASSERT(false);
+  TORCH_INTERNAL_ASSERT(
+      false,
+      "RootHandler should not handle any ingress Events.");
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -63,7 +65,10 @@ std::vector<std::shared_ptr<Future>> DefaultTrigger::handleEvent(
       return handlePreForward(
           c10::static_intrusive_pointer_cast<PreForwardEvent>(event));
     default:
-      TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
+      TORCH_INTERNAL_ASSERT(
+          false,
+          "DefaultTrigger retrieved an unexcepted event type ",
+          event->schema().type_);
   }
 }
 
@@ -73,12 +78,8 @@ std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePrepareModule(
             << ", inserting hooks!" << std::endl << std::flush;
 
   params_ = event->parameters();
-  //std::vector<std::shared_ptr<Future>> futures;
-  //futures.reserve(params_.size());
   for (size_t index = 0; index < params_.size(); ++index) {
     auto& param = params_[index];
-    //futures.emplace_back(std::make_shared<Future>(at::AnyClassType::get()));
-
     auto gradAccumulator =
         torch::autograd::impl::grad_accumulator(param);
     // Hook to execute after the gradient accumulator has executed.
@@ -92,13 +93,11 @@ std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePrepareModule(
             }));
     gradAccumulators_.push_back(std::move(gradAccumulator));
   }
-  std::cout << "==== done preparing module!\n" << std::flush;
   return {};
 }
 
 std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePreForward(
     c10::intrusive_ptr<PreForwardEvent> event) {
-  std::cout << "==== pre forward!\n" << std::flush;
   gradReadyFutures_.clear();
   gradReadyFutures_.reserve(params_.size());
   for (size_t i = 0; i < params_.size(); ++i) {
@@ -144,12 +143,10 @@ std::vector<std::shared_ptr<Future>> DefaultBucketer::handleEvent(
           c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event));
     }
     case EventType::LOCAL_GRAD_READY: {
-      std::cout << "=== got LOCAL_GRAD_READY event " << std::endl << std::flush;
       return handleLocalGradReady(
           c10::static_intrusive_pointer_cast<LocalGradReadyEvent>(event));
     }
     case EventType::COMM_DONE: {
-      std::cout << "=== get COMM_DONE " << std::endl << std::flush;
       return {};
     }
     default:
@@ -206,7 +203,6 @@ std::vector<std::shared_ptr<Future>> AllReduceComm::handleEvent(
     const c10::intrusive_ptr<Event>& event) {
   switch (event->schema().type_) {
     case EventType::BUCKET_READY: {
-      std::cout << "=== got BUCKET_READY event " << std::endl << std::flush;
       return handleBucketReady(
           c10::static_intrusive_pointer_cast<BucketReadyEvent>(event));
     }

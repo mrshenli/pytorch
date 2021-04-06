@@ -4,17 +4,18 @@ namespace torch {
 namespace distributed {
 namespace spmd {
 
-// TODO: add PRE_FORWARD, POST_FORWARD, PRE_BACKWARD, and POST_BACKWARD
+// TODO: add PRE_BACKWARD and POST_BACKWARD
 enum EventType {
-  PREPARE_MODULE = 0,
-  PRE_FORWARD = 1,
-  POST_FORWARD = 2,
+  PREPARE_MODULE = 0,     // Type I event
+  PRE_FORWARD = 1,        // Type I event
+  POST_FORWARD = 2,       // Type I event
   LOCAL_GRAD_READY = 3,
   BUCKET_READY = 4,
   COMM_DONE = 5,
   GLOBAL_GRAD_READY = 6,
 };
 
+// A schema that uniquely identifies an event type.
 struct EventSchema {
   EventSchema(EventType type) : type_(type) {}
 

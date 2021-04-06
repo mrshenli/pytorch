@@ -34,7 +34,7 @@ class EngineTest(MultiProcessTestCase):
 
     def test_engine_without_handler(self):
         net = nn.Linear(10, 10)
-        engine = Engine()
+        engine = Engine([])
         engine.prepare_module(list(net.parameters()))
 
     def test_engine_with_default_handlers(self):
@@ -54,7 +54,6 @@ class EngineTest(MultiProcessTestCase):
         )
         engine.prepare_module(list(ddp.parameters()))
 
-        print("!!!!!!! start training!")
         for _ in range(3):
             inputs = torch.randn(10, 10)
 

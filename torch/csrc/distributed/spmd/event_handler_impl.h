@@ -7,6 +7,8 @@ namespace torch {
 namespace distributed {
 namespace spmd {
 
+// WIP RootHandler
+// TODO: generate POST_FORWARD event
 class TORCH_API RootHandler : public EventHandler {
  public:
   using EventHandler::EventHandler;
@@ -16,7 +18,7 @@ class TORCH_API RootHandler : public EventHandler {
       const c10::intrusive_ptr<Event>& /* unused */) override;
 };
 
-
+// WIP DefaultTrigger
 class TORCH_API DefaultTrigger : public EventHandler {
  public:
   using EventHandler::EventHandler;

@@ -17,7 +17,7 @@ Engine::Engine(std::vector<std::shared_ptr<EventHandler>> handlers)
   handlerNodes.push_back(rootHandler);
 
   {
-    // build graph
+    // BUILD GRAPH
 
     // check ingress events, and build ingressMap that points from each event
     // to it's corresponding handlers.
@@ -36,24 +36,24 @@ Engine::Engine(std::vector<std::shared_ptr<EventHandler>> handlers)
         auto iter = eventNodes_.find(eventSchema);
         std::shared_ptr<EventNode> eventNode;
         if (iter == eventNodes_.end()) {
-        eventNode = std::make_shared<EventNode>(eventSchema);
-        std::cout << "=== registering event " << eventSchema.type_ << std::endl << std::flush;
-        eventNodes_.emplace(eventSchema, eventNode);
+          eventNode = std::make_shared<EventNode>(eventSchema);
+          eventNodes_.emplace(eventSchema, eventNode);
         } else {
-        eventNode = iter->second;
+          eventNode = iter->second;
         }
 
         handlerNode->nextEdges_.push_back(eventNode);
         for (auto& nextHandlerNode : ingressMap[eventSchema]) {
-        eventNode->nextEdges_.push_back(nextHandlerNode);
+          eventNode->nextEdges_.push_back(nextHandlerNode);
         }
       }
     }
   }
 
   {
-    // verify graph: all EventNodes and HandlerNodes must be reacheable from
-    // Type I events.
+    // VERIFY GRAPH
+
+    // all EventNodes and HandlerNodes must be reacheable from Type I events.
     std::unordered_set<Node*> seen;
     std::vector<Node*> queue;
     queue.push_back(rootHandler.get());
@@ -68,8 +68,6 @@ Engine::Engine(std::vector<std::shared_ptr<EventHandler>> handlers)
       }
     }
 
-    std::cout << "seen = " << seen.size() << ", eventNodes_.size = " << eventNodes_.size()
-            << ", handlerNodes = " << handlerNodes.size() << std::endl << std::flush;
     TORCH_CHECK(
         seen.size() == eventNodes_.size() + handlerNodes.size(),
         "Invalid Event Handling Graph.");
@@ -90,9 +88,6 @@ void Engine::preForward() {
 // accordingly.
 void Engine::processEvent(const c10::intrusive_ptr<Event>& event) {
   auto iter = eventNodes_.find(event->schema());
-  //TORCH_CHECK(iter != eventNodes_.end());
-  std::cout << "got event " << event->schema().type_ << ", registered events? " << eventNodes_.size()
-            << ", found it? " << (iter != eventNodes_.end()) << std::endl << std::flush;
   if (iter != eventNodes_.end()) {
     for (auto& node : iter->second->nextEdges_) {
       auto handlerNode = std::static_pointer_cast<HandlerNode>(node);

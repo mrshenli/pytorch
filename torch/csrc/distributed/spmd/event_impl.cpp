@@ -15,12 +15,16 @@ namespace {
 // not yet meant to be visible from Python.
 static const auto prepareModuleEvent =
     torch::class_<PrepareModuleEvent>("spmd", "_PrepareModuleEvent");
+static const auto preForwardEvent =
+    torch::class_<PreForwardEvent>("spmd", "_PreForwardEvent");
 static const auto localgradReadyEvent =
     torch::class_<LocalGradReadyEvent>("spmd", "_LocalGradReadyEvent");
 static const auto bucketReadyEvent =
     torch::class_<BucketReadyEvent>("spmd", "_BucketReadyEvent");
 static const auto commDoneEvent =
     torch::class_<CommDoneEvent>("spmd", "_CommDoneEvent");
+static const auto globalGradReadyEvent =
+    torch::class_<GlobalGradReadyEvent>("spmd", "_GlobalGradReadyEvent");
 
 } // namespace
 
