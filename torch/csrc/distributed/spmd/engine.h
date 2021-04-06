@@ -12,8 +12,19 @@ namespace distributed {
 namespace spmd {
 
 
+// The event-based engine that maintains the event-handling graph and routes
+// events to corresponding handlers properly.
+// During construction, the Engine ctor takes a list of EventHandler instances.
+// Each EventHandler specifies its ingress and egress events. Based on that
+// information, the Engine builds a bipartite graph where the two sets of nodes
+// are distinct Events and EventHandlers respectively. An edge pointing from an
+// Event to an EventHandler means that the event is an ingress event for the
+// handler, while an edge pointing from an EventHandler to an Event means that
+// the event is an egress event from the handler.
+// NB: any event handler, independent to event or handlers
 class TORCH_API Engine {
  public:
+
   explicit Engine(std::vector<std::shared_ptr<EventHandler>> handlers);
   void prepareModule(std::vector<at::Tensor> parameters);
 
