@@ -19,7 +19,6 @@ class TORCH_API RootHandler : public EventHandler {
 };
 
 // WIP DefaultTrigger
-// TODO:
 class TORCH_API DefaultTrigger : public EventHandler {
  public:
   using EventHandler::EventHandler;
@@ -43,7 +42,10 @@ class TORCH_API DefaultTrigger : public EventHandler {
   std::vector<std::shared_ptr<Future>> gradReadyFutures_;
 };
 
-
+// WIP DefaultBucketer
+// TODO:
+// 1. split this into BucketIndexer and BucketAllocator
+// 2. bucketing gradients into larger tensors
 class TORCH_API DefaultBucketer : public EventHandler {
  public:
   using EventHandler::EventHandler;
@@ -69,7 +71,9 @@ class TORCH_API DefaultBucketer : public EventHandler {
   std::vector<at::Tensor> params_;
 };
 
-
+// WIP AllReduceComm
+// TODO:
+// 1. Launch AllReduce asynchronously
 class TORCH_API AllReduceComm : public EventHandler {
  public:
   using EventHandler::EventHandler;

@@ -16,6 +16,8 @@ enum EventType {
 };
 
 // A schema that uniquely identifies an event type.
+// TODO:
+// 1. Add Event frequency field, e.g., EXACTLY_ONCE, AT_MOST_ONCE
 struct EventSchema {
   EventSchema(EventType type) : type_(type) {}
 
