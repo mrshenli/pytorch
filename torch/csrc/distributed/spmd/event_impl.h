@@ -22,6 +22,11 @@ class PrepareModuleEvent : public Event {
   std::vector<at::Tensor> params_;
 };
 
+class PreForwardEvent : public Event {
+ public:
+  explicit PreForwardEvent() : Event(EventSchema(EventType::PRE_FORWARD)) {}
+};
+
 class LocalGradReadyEvent : public Event {
  public:
   LocalGradReadyEvent(size_t index, const at::Tensor& grad)
@@ -58,7 +63,7 @@ struct Bucket final {
 
 class BucketReadyEvent : public Event {
  public:
-  BucketReadyEvent(std::shared_ptr<Bucket> bucket)
+  explicit BucketReadyEvent(std::shared_ptr<Bucket> bucket)
       : Event(EventSchema(EventType::BUCKET_READY)),
         bucket_(std::move(bucket)) {}
 
@@ -72,7 +77,7 @@ class BucketReadyEvent : public Event {
 
 class CommDoneEvent : public Event {
  public:
-  CommDoneEvent(std::shared_ptr<Bucket> bucket)
+  explicit CommDoneEvent(std::shared_ptr<Bucket> bucket)
       : Event(EventSchema(EventType::COMM_DONE)),
         bucket_(std::move(bucket)) {}
 
@@ -86,7 +91,7 @@ class CommDoneEvent : public Event {
 
 class GlobalGradReadyEvent : public Event {
  public:
-  GlobalGradReadyEvent(size_t index)
+  explicit GlobalGradReadyEvent(size_t index)
       : Event(EventSchema(EventType::LOCAL_GRAD_READY)),
         index_(index) {}
 

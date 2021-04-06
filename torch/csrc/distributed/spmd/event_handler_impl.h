@@ -29,14 +29,17 @@ class TORCH_API DefaultTrigger : public EventHandler {
   std::vector<std::shared_ptr<Future>> handlePrepareModule(
       c10::intrusive_ptr<PrepareModuleEvent> event);
 
-  void autogradHook(
-      size_t index,
-      const std::shared_ptr<Future>& localGradReadyFuture);
+  std::vector<std::shared_ptr<Future>> handlePreForward(
+      c10::intrusive_ptr<PreForwardEvent> event);
+
+  void autogradHook(size_t index);
 
   // keep grad accumulators alive
   std::vector<std::shared_ptr<torch::autograd::Node>> gradAccumulators_;
   std::vector<at::Tensor> params_;
+  std::vector<std::shared_ptr<Future>> gradReadyFutures_;
 };
+
 
 class TORCH_API DefaultBucketer : public EventHandler {
  public:
@@ -62,6 +65,7 @@ class TORCH_API DefaultBucketer : public EventHandler {
 
   std::vector<at::Tensor> params_;
 };
+
 
 class TORCH_API AllReduceComm : public EventHandler {
  public:

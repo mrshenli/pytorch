@@ -21,12 +21,13 @@ namespace spmd {
 // Event to an EventHandler means that the event is an ingress event for the
 // handler, while an edge pointing from an EventHandler to an Event means that
 // the event is an egress event from the handler.
-// NB: any event handler, independent to event or handlers
+// NB: this engine
 class TORCH_API Engine {
  public:
 
   explicit Engine(std::vector<std::shared_ptr<EventHandler>> handlers);
   void prepareModule(std::vector<at::Tensor> parameters);
+  void preForward();
 
  private:
 

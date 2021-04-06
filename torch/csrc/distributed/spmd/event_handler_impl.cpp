@@ -31,7 +31,9 @@ std::vector<EventSchema> RootHandler::ingressEvents() {
 
 std::vector<EventSchema> RootHandler::egressEvents() {
   // TODO: add PRE_FORWARD and POST_FORWARD
-  return {EventType::PREPARE_MODULE};
+  return {
+      EventType::PREPARE_MODULE,
+      EventType::PRE_FORWARD};
 }
 
 std::vector<std::shared_ptr<Future>> RootHandler::handleEvent(
@@ -44,7 +46,7 @@ std::vector<std::shared_ptr<Future>> RootHandler::handleEvent(
 /////////////////////////////////////////////////////////////////////
 
 std::vector<EventSchema> DefaultTrigger::ingressEvents() {
-  return {EventType::PREPARE_MODULE};
+  return {EventType::PREPARE_MODULE, EventType::PRE_FORWARD};
 }
 
 std::vector<EventSchema> DefaultTrigger::egressEvents() {
@@ -54,10 +56,12 @@ std::vector<EventSchema> DefaultTrigger::egressEvents() {
 std::vector<std::shared_ptr<Future>> DefaultTrigger::handleEvent(
     const c10::intrusive_ptr<Event>& event) {
   switch (event->schema().type_) {
-    case EventType::PREPARE_MODULE: {
+    case EventType::PREPARE_MODULE:
       return handlePrepareModule(
           c10::static_intrusive_pointer_cast<PrepareModuleEvent>(event));
-    }
+    case EventType::PRE_FORWARD:
+      return handlePreForward(
+          c10::static_intrusive_pointer_cast<PreForwardEvent>(event));
     default:
       TORCH_INTERNAL_ASSERT(false, "unexcepted event type");
   }
@@ -69,35 +73,47 @@ std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePrepareModule(
             << ", inserting hooks!" << std::endl << std::flush;
 
   params_ = event->parameters();
-  std::vector<std::shared_ptr<Future>> futures;
-  futures.reserve(params_.size());
+  //std::vector<std::shared_ptr<Future>> futures;
+  //futures.reserve(params_.size());
   for (size_t index = 0; index < params_.size(); ++index) {
     auto& param = params_[index];
-    futures.emplace_back(std::make_shared<Future>(at::AnyClassType::get()));
+    //futures.emplace_back(std::make_shared<Future>(at::AnyClassType::get()));
 
     auto gradAccumulator =
         torch::autograd::impl::grad_accumulator(param);
     // Hook to execute after the gradient accumulator has executed.
     gradAccumulator->add_post_hook(
         torch::make_unique<torch::autograd::utils::LambdaPostHook>(
-            [this, index, localGradReadyFuture=futures.back()](
+            [this, index](
                 const torch::autograd::variable_list& outputs,
                 const torch::autograd::variable_list& /* unused */) {
-              autogradHook(index, localGradReadyFuture);
+              autogradHook(index);
               return outputs;
             }));
     gradAccumulators_.push_back(std::move(gradAccumulator));
   }
-  return futures;
+  std::cout << "==== done preparing module!\n" << std::flush;
+  return {};
 }
 
-void DefaultTrigger::autogradHook(
-    size_t index,
-    const std::shared_ptr<Future>& localGradReadyFuture) {
+std::vector<std::shared_ptr<Future>> DefaultTrigger::handlePreForward(
+    c10::intrusive_ptr<PreForwardEvent> event) {
+  std::cout << "==== pre forward!\n" << std::flush;
+  gradReadyFutures_.clear();
+  gradReadyFutures_.reserve(params_.size());
+  for (size_t i = 0; i < params_.size(); ++i) {
+    gradReadyFutures_.emplace_back(
+        std::make_shared<Future>(at::AnyClassType::get()));
+  }
+  return gradReadyFutures_;
+}
+
+void DefaultTrigger::autogradHook(size_t index) {
+  TORCH_INTERNAL_ASSERT(gradReadyFutures_.size() == params_.size());
   auto lgr = c10::make_intrusive<LocalGradReadyEvent>(
       index, params_[index].mutable_grad());
 
-  localGradReadyFuture->markCompleted(
+  gradReadyFutures_[index]->markCompleted(
       IValue(c10::static_intrusive_pointer_cast<Event>(lgr)));
 }
 

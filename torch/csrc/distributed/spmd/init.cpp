@@ -67,6 +67,10 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
       .def(
           "prepare_module",
           &Engine::prepareModule,
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "pre_forward",
+          &Engine::preForward,
           py::call_guard<py::gil_scoped_release>());
 
   Py_RETURN_TRUE;

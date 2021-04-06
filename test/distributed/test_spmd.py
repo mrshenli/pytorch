@@ -32,7 +32,12 @@ class EngineTest(MultiProcessTestCase):
     def world_size(self):
         return 2
 
-    def test_engine(self):
+    def test_engine_without_handler(self):
+        net = nn.Linear(10, 10)
+        engine = Engine()
+        engine.prepare_module(list(net.parameters()))
+
+    def test_engine_with_default_handlers(self):
         torch.manual_seed(0)
 
         store = c10d.FileStore(self.file_name, self.world_size)
@@ -44,15 +49,18 @@ class EngineTest(MultiProcessTestCase):
         opt_net = optim.SGD(net.parameters(), lr=0.1)
         opt_ddp = optim.SGD(ddp.parameters(), lr=0.1)
 
+        engine = Engine(
+            [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
+        )
+        engine.prepare_module(list(ddp.parameters()))
+
+        print("!!!!!!! start training!")
         for _ in range(3):
             inputs = torch.randn(10, 10)
 
             # run ddp
             ddp_inputs = inputs.chunk(self.world_size)
-            engine = Engine(
-                [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
-            )
-            engine.prepare_module(list(ddp.parameters()))
+            engine.pre_forward()
             ddp(ddp_inputs[self.rank]).sum().backward()
 
             # run local model

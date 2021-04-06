@@ -79,6 +79,10 @@ void Engine::prepareModule(std::vector<at::Tensor> parameters) {
       c10::make_intrusive<PrepareModuleEvent>(std::move(parameters)));
 }
 
+void Engine::preForward() {
+  processEvent(c10::make_intrusive<PreForwardEvent>());
+}
+
 // NB: this function is thread-safe as it only reads eventNodes_. However, if
 // an EventHandler is not thread-safe, that EventHandler should use locks
 // accordingly.

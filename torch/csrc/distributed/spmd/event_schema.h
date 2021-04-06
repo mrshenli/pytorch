@@ -7,10 +7,11 @@ namespace spmd {
 // TODO: add PRE_FORWARD, POST_FORWARD, PRE_BACKWARD, and POST_BACKWARD
 enum EventType {
   PREPARE_MODULE = 0,
-  LOCAL_GRAD_READY = 1,
-  BUCKET_READY = 2,
-  COMM_DONE = 3,
-  GLOBAL_GRAD_READY = 4,
+  PRE_FORWARD = 1,
+  LOCAL_GRAD_READY = 2,
+  BUCKET_READY = 3,
+  COMM_DONE = 4,
+  GLOBAL_GRAD_READY = 5,
 };
 
 struct EventSchema {
