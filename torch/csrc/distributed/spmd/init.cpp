@@ -48,7 +48,31 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
           py::init<c10::intrusive_ptr<::c10d::ProcessGroup>>(),
           py::arg("process_group"));
 
-  shared_ptr_class_<Engine>(module, "Engine")
+  shared_ptr_class_<Engine>(
+      module,
+      "Engine",
+      R"(
+          Event-based Engine for composable DDP.
+
+          Args:
+              handlers (list of ``EventHandler`` instances): a list of
+                  ``EventHandler`` instances to be registered in the ``Engine``.
+
+          Example::
+              >>> from torch.distributed._spmd import (
+              >>>     AllReduceComm,
+              >>>     DefaultBucketer,
+              >>>     DefaultTrigger,
+              >>>     Engine,
+              >>> )
+              >>>
+              >>> engine = Engine(
+              >>>     [DefaultTrigger(), DefaultBucketer(), AllReduceComm(pg)]
+              >>> )
+              >>> engine.prepare_module(list(model.parameters()))
+              >>> engine.pre_forward()
+              >>> model(inputs).sum().backward()
+      )")
       .def(
           py::init([](const std::vector<std::shared_ptr<EventHandler>>& handlers) {
             return std::make_shared<Engine>(handlers);
@@ -57,11 +81,24 @@ PyObject* spmd_init(PyObject* _unused, PyObject* noargs) {
       .def(
           "prepare_module",
           &Engine::prepareModule,
-          py::call_guard<py::gil_scoped_release>())
+          py::call_guard<py::gil_scoped_release>(),
+          R"(
+              Send a ``PREPARE_MODULE`` type I event to the engine. This
+              function must be called exactly once before running the training
+              loop on the local module.
+
+              Args:
+                  params (list of Tensors): a list of parameters of the module.
+          )")
       .def(
           "pre_forward",
           &Engine::preForward,
-          py::call_guard<py::gil_scoped_release>());
+          py::call_guard<py::gil_scoped_release>(),
+          R"(
+              Send a ``PRE_FORWARD`` type I event to the engine. This function
+              must be called exactly once before running every forward pass on
+              the local module.
+          )");
 
   Py_RETURN_TRUE;
 }
