@@ -820,7 +820,9 @@ void TensorPipeAgent::sendCompletedResponseMessage(
       // RRef.to_here().
       for (const auto& tensor : responseMessage.tensors()) {
         const auto device = tensor.device().index();
-        if (device != -1 && ctxDevices.find(device) == ctxDevices.end()) {
+        if (device != -1 &&
+            std::find(ctxDevices.begin(), ctxDevices.end(), device)
+                != ctxDevices.end()) {
           std::ostringstream oss;
           std::copy(
               ctxDevices.begin(),

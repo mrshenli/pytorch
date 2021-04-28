@@ -89,6 +89,56 @@ TORCH_API void populateRemoteProfiledEvents(
     const std::vector<std::vector<torch::autograd::profiler::LegacyEvent>>&
         eventLists);
 
+
+// This is a wrapper of CUDAMultiStreamGuard to run in both CUDA-enabled and
+// CPU-only environments. When CUDA is not available, all methods are no-ops.
+struct MultiStreamGuard {
+  MultiStreamGuard(const MultiStreamGuard& other) = delete;
+  MultiStreamGuard(MultiStreamGuard&& other) = delete;
+  MultiStreamGuard& operator=(const MultiStreamGuard& rhs) = delete;
+  MultiStreamGuard& operator=(MultiStreamGuard&& rhs) = delete;
+
+#ifndef USE_CUDA_NOT_ROCM
+  explicit MultiStreamGuard(
+      const std::shared_ptr<LazyStreamContext>& /* unused */) {}
+#else
+  static inline std::vector<at::cuda::CUDAStream> toCUDAStreams(
+      const std::vector<c10::Stream>& streams) {
+    std::vector<at::cuda::CUDAStream> cudaStreams;
+    cudaStreams.reserve(streams.size());
+    std::transform(
+        streams.begin(),
+        streams.end(),
+        std::back_inserter(cudaStreams),
+        [](c10::Stream s) { return at::cuda::CUDAStream(s); });
+    return cudaStreams;
+  }
+  explicit MultiStreamGuard(const std::shared_ptr<LazyStreamContext>& ctx)
+      : guard(toCUDAStreams(ctx->getReservedStreams())) {}
+
+ private:
+  at::cuda::CUDAMultiStreamGuard guard;
+#endif
+};
+
+struct MultiStreamGuard {
+  MultiStreamGuard(const MultiStreamGuard& other) = delete;
+  MultiStreamGuard(MultiStreamGuard&& other) = delete;
+  MultiStreamGuard& operator=(const MultiStreamGuard& rhs) = delete;
+  MultiStreamGuard& operator=(MultiStreamGuard&& rhs) = delete;
+
+  explicit MultiStreamGuard(std::vector<c10::Stream> streams) {
+    original_streams_.reserve(streams.size());
+    for (const auto& s : streams) {
+      original_streams_.emplace_back(c10::impl::getDeviceGuardImpl(
+          s.device_type())->getStream(s.device()));
+    }
+  }
+
+ private:
+  std::vector<c10::Stream> original_streams_;
+};
+
 using stream_factory_t = std::function<c10::Stream(c10::DeviceIndex)>;
 
 // A general device context class for both CPU and CUDA. If CUDA is not
@@ -159,10 +209,11 @@ struct TORCH_API LazyStreamContext {
     }
   }
 
-  std::set<c10::DeviceIndex> devices() const {
-    std::set<c10::DeviceIndex> devices;
+  std::vector<c10::DeviceIndex> devices() const {
+    std::vector<c10::DeviceIndex> devices;
+    devices.reserve(streams_.size());
     for (const auto& entry : streams_) {
-      devices.insert(entry.first);
+      devices.push_back(entry.first);
     }
     return devices;
   }
