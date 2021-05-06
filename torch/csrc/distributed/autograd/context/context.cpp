@@ -12,7 +12,8 @@ namespace autograd {
 using torch::autograd::AccumulateGrad;
 
 DistAutogradContext::DistAutogradContext(int64_t contextId)
-    : contextId_(contextId) {}
+    : contextId_(contextId),
+      impl_(c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA}) {}
 
 int64_t DistAutogradContext::contextId() const {
   return contextId_;
@@ -97,7 +98,9 @@ void DistAutogradContext::accumulateGrad(
       // refcount bump for the new_grad.
       num_expected_refs + 1,
       [this, &variable](at::Tensor&& grad_update) {
+        auto device = grad_update.device();
         accumulatedGrads_.insert(variable, std::move(grad_update));
+        recordGradEvent(std::move(device));
       });
 }
 
@@ -214,6 +217,11 @@ std::shared_ptr<SendRpcBackward> DistAutogradContext::retrieveSendFunction(
 const c10::Dict<torch::Tensor, torch::Tensor> DistAutogradContext::
     getGradients() const {
   std::lock_guard<std::mutex> guard(lock_);
+  for (auto& entry : gradReadyEvents_) {
+    auto& event = entry.second;
+    event.block(impl_.getStream(event.device()));
+    std::cout << "==== waiting for current stream on " << event.device() << std::endl << std::flush;
+  }
   return accumulatedGrads_;
 }
 
@@ -231,8 +239,10 @@ void DistAutogradContext::runGradCallbackForVariable(
   }
   if (cb(grad)) {
     std::lock_guard<std::mutex> guard(lock_);
+    auto device = grad.device();
     // Needs to update the grad in the map.
     accumulatedGrads_.insert_or_assign(variable, std::move(grad));
+    recordGradEvent(std::move(device));
   }
 }
 

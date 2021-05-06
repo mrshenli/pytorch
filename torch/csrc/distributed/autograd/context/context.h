@@ -108,6 +108,22 @@ class TORCH_API DistAutogradContext {
 
   void clearOutstandingRpcs();
 
+	void recordGradEvent(c10::Device device) {
+		if (device.is_cuda()) {
+			auto iter = gradReadyEvents_.find(device);
+			if (iter == gradReadyEvents_.end()) {
+				c10::Event event(device.type());
+				event.record(impl_.getStream(event.device()));
+				gradReadyEvents_.emplace(
+						std::piecewise_construct,
+						std::forward_as_tuple(device),
+						std::forward_as_tuple(std::move(event)));
+			} else {
+				iter->second.record(impl_.getStream(device));
+			}
+		}
+	}
+
   const int64_t contextId_;
 
   // Set containing known worker IDs, used in cleaning up autograd context.
@@ -127,6 +143,9 @@ class TORCH_API DistAutogradContext {
   // which the gradient needs to be accumulated and the value is the gradient
   // that needs to be accumulated on that variable..
   c10::Dict<torch::Tensor, torch::Tensor> accumulatedGrads_;
+
+	std::unordered_map<c10::Device, c10::Event> gradReadyEvents_;
+	const c10::impl::VirtualGuardImpl impl_;
 
   // The autograd GraphTask for the backward pass on this node for this context.
   std::shared_ptr<torch::autograd::GraphTask> graphTask_;
