@@ -2245,12 +2245,21 @@ class FaultyAgentDistAutogradTest(RpcAgentTestFixture):
 
 
 class WrapperModule(nn.Module):
-    def __init__(self, model, device):
+    def __init__(self, model, device, is_rref=False):
         super().__init__()
         self.model = model.to(device)
+        self.is_rref = is_rref
+        self.device = device
+        self.last_rref = None
 
-    def forward(self, *args):
-        return self.model(*args)
+    def forward(self, x):
+        if self.is_rref:
+            self.last_rref = x
+            x = x.to_here()
+            torch.cuda.synchronize(self.device)
+        out = self.model(x)
+        #torch.cuda.synchronize(self.device)
+        return out
 
     def gradients(self, ctx_id):
         grads = dist_autograd.get_gradients(ctx_id)
@@ -2389,5 +2398,89 @@ class TensorPipeCudaDistAutogradTest(RpcAgentTestFixture):
                     local_gradients = [p.grad for p in local_layers[i].parameters()]
                     for g1, g2 in zip(futs[i].wait(), local_gradients):
                         self.assertEqual(g1, g2)
+
+        rpc.shutdown()
+
+    @skip_if_lt_x_gpu(4)
+    def test_micro_batch_synchronizations(self):
+        options = self.rpc_backend_options
+        for peer_rank in range(self.world_size):
+            options.set_device_map(worker_name(peer_rank), {self.rank: peer_rank})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        if self.rank == 0:
+            # this is master
+            layers = [nn.Linear(2000, 2000) for _ in range(self.world_size - 1)]
+            local_layers = [l.to(0) for l in layers]
+            remote_layers = []
+            for rank in range(1, self.world_size):
+                remote_layers.append(rpc.remote(
+                    worker_name(rank),
+                    WrapperModule,
+                    args=(layers[rank - 1], rank, True)
+                ))
+
+            x = torch.randn(5000, 2000).to(0)
+            # local iteration
+            local_model = nn.Sequential(*local_layers)
+            #local_model(x).sum().backward()
+            local_output = local_model(x)
+            local_sum = local_output.sum()
+            local_sums = [out.sum() for out in local_output.split(500)]
+
+            # remote iteration
+            with dist_autograd.context() as context_id:
+                output_rrefs = []
+                x_splits = x.split(500)
+                torch.cuda.synchronize(0)
+                for xx in x_splits:
+                    rref_xx = RRef(xx, devices=[torch.device("cuda:0")])
+                    for remote_layer in remote_layers:
+                        rref_xx = remote_layer.remote().forward(rref_xx)
+                        # TODO: toHere needs to synchronize on the caller??
+                    output_rrefs.append(rref_xx)
+
+                #remote_sum = torch.cat([rref.to_here() for rref in output_rrefs]).sum()
+
+                #time.sleep(2)
+                outputs = [rref.to_here() for rref in output_rrefs]
+                #torch.cuda.synchronize(0)
+                #torch.cuda.synchronize(1)
+                #torch.cuda.synchronize(2)
+                #torch.cuda.synchronize(3)
+                output = torch.cat(outputs)
+
+                remote_sum = output.sum()
+
+                print(f"=== {local_sum}, {remote_sum}")
+                #self.assertEqual(local_sum, remote_sum)
+
+                remote_sums = [rref.to_here().sum() for rref in output_rrefs]
+                i = 0
+                torch.cuda.synchronize(0)
+                for local_sum, remote_sum in zip(local_sums, remote_sums):
+                    self.assertEqual(local_sum, remote_sum, f"--- {i}")
+                    i += 1
+                """
+                import time
+                time.sleep(10)
+                dist_autograd.backward(context_id, [output.sum()])
+                time.sleep(10)
+                futs = []
+                for remote_layer in remote_layers:
+                    futs.append(remote_layer.rpc_async().gradients(context_id))
+
+                for i in range(len(futs)):
+                    local_gradients = [p.grad for p in local_layers[i].parameters()]
+                    for g1, g2 in zip(futs[i].wait(), local_gradients):
+                        self.assertEqual(g1, g2)
+                """
 
         rpc.shutdown()

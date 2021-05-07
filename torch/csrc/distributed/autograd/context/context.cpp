@@ -99,6 +99,7 @@ void DistAutogradContext::accumulateGrad(
 
   at::Tensor new_grad = AccumulateGrad::callHooks(variable, grad);
 
+  waitGradEvent(new_grad.device());
   // TODO: Need to bump 'num_expected_refs' here when we support post_hooks for
   // distributed autograd as part of
   // https://github.com/pytorch/pytorch/issues/33482
@@ -178,10 +179,22 @@ void DistAutogradContext::recordGradEvent(c10::Device device) {
           std::forward_as_tuple(device),
           std::forward_as_tuple(std::move(event)));
     } else {
-      iter->second.record(impl_.getStream(device));
+      auto stream = impl_.getStream(device);
+      iter->second.block(stream);
+      iter->second.record(stream);
     }
   }
 }
+
+void DistAutogradContext::waitGradEvent(c10::Device device) {
+  if (device.is_cuda()) {
+    auto iter = gradReadyEvents_.find(device);
+    if (iter != gradReadyEvents_.end()) {
+      iter->second.block(impl_.getStream(device));
+    }
+  }
+}
+
 
 std::shared_ptr<c10::ivalue::Future> DistAutogradContext::
     clearAndWaitForOutstandingRpcsAsync() {
