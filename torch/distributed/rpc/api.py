@@ -27,6 +27,7 @@ from torch._C._distributed_rpc import (
     _is_current_rpc_agent_set,
     _reset_current_rpc_agent,
     _set_and_start_rpc_agent,
+    _current_stream_id,
 )
 
 from .internal import (

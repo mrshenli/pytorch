@@ -400,6 +400,8 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
     }
     try {
       auto& pythonRpcHandler = PythonRpcHandler::getInstance();
+      c10::MultiStreamGuard guard(
+              lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
       std::shared_ptr<SerializedPyObj> result;
       {
         // Need this GIL to guard jit::toPyObj and destruct its returned
@@ -411,7 +413,7 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
       Message m =
           PythonRRefFetchRet(std::move(*result).toIValues()).toMessage();
       m.setId(messageId);
-      rref->blockAllStreams(lsctx);
+      //rref->blockAllStreams(lsctx);
       responseFuture->markCompleted(
           IValue(c10::make_intrusive<Message>(std::move(m))));
     } catch (py::error_already_set& e) {

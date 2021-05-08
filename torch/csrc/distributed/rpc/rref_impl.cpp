@@ -256,8 +256,15 @@ OwnerRRef::OwnerRRef(
     c10::optional<IValue> value,
     std::vector<c10::Device> devices)
     : RRef(ownerId, rrefId, type) {
+  if (!devices.empty()) {
+    const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA};
+
+    std::cout << "=== current stream id in OwnerRRef ctor " << int(guard.getStream(devices[0]).id())
+              << std::endl << std::flush;
+  }
   future_ = c10::make_intrusive<JitFuture>(
       at::AnyClassType::get(), std::move(devices));
+
 
   if (value.has_value()) {
     future_->markCompleted(value.value());

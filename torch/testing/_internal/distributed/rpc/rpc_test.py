@@ -4644,6 +4644,29 @@ class FaultyAgentRpcTest(RpcAgentTestFixture):
         # Reset for clean shutdown
         rpc._set_rpc_timeout(rpc.constants.DEFAULT_RPC_TIMEOUT_SEC)
 
+
+class WrapperModule(nn.Module):
+    def __init__(self, model, device, is_rref=False):
+        super().__init__()
+        self.model = model.to(device)
+        self.is_rref = is_rref
+        self.device = device
+        self.last_rref = None
+
+    def forward(self, x):
+        if self.is_rref:
+            self.last_rref = x
+            x = x.to_here()
+            torch.cuda.synchronize(self.device)
+        out = self.model(x)
+        #torch.cuda.synchronize(self.device)
+        return out
+
+    def gradients(self, ctx_id):
+        grads = dist_autograd.get_gradients(ctx_id)
+        return [grads[p] for p in self.model.parameters()]
+
+
 class TensorPipeAgentRpcTest(RpcAgentTestFixture):
 
     def test_mismatched_type_for_options(self):
@@ -5852,6 +5875,55 @@ class TensorPipeAgentCudaRpcTest(RpcAgentTestFixture):
             )
 
             rpc.shutdown()
+
+    @skip_if_lt_x_gpu(4)
+    def test_micro_batch_synchronizations(self):
+        options = self.rpc_backend_options
+        for peer_rank in range(self.world_size):
+            options.set_device_map(worker_name(peer_rank), {self.rank: peer_rank})
+
+        rpc.init_rpc(
+            name=worker_name(self.rank),
+            backend=self.rpc_backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            rpc_backend_options=options,
+        )
+
+        if self.rank == 0:
+            # this is master
+            layers = [nn.Linear(2000, 2000) for _ in range(self.world_size - 1)]
+            local_layers = [l.to(0) for l in layers]
+            remote_layers = []
+            for rank in range(1, self.world_size):
+                remote_layers.append(rpc.remote(
+                    worker_name(rank),
+                    WrapperModule,
+                    args=(layers[rank - 1], rank, True)
+                ))
+
+            for _ in range(4):
+                x = torch.randn(5000, 2000).to(0)
+                # local iteration
+                local_model = nn.Sequential(*local_layers)
+                local_sum= local_model(x).sum()
+
+                # remote iteration
+                with dist_autograd.context() as context_id:
+                    output_rrefs = []
+                    x_splits = x.split(500)
+                    print("=== current stream ", rpc.api._current_stream_id(torch.device("cuda:0")))
+                    #torch.cuda.current_stream(0).synchronize()
+                    for xx in x_splits:
+                        rref_xx = RRef(xx, devices=[torch.device("cuda:0")])
+                        for remote_layer in remote_layers:
+                            rref_xx = remote_layer.remote().forward(rref_xx)
+                        output_rrefs.append(rref_xx)
+
+                    remote_sum = torch.cat([rref.to_here() for rref in output_rrefs]).sum()
+                    self.assertEqual(local_sum, remote_sum)
+
+        rpc.shutdown()
 
     @skip_if_lt_x_gpu(1)
     def test_devices_option_mismatch_reverse(self):
