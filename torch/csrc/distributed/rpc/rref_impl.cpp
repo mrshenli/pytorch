@@ -256,10 +256,13 @@ OwnerRRef::OwnerRRef(
     c10::optional<IValue> value,
     std::vector<c10::Device> devices)
     : RRef(ownerId, rrefId, type) {
+  const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA};
+  auto tmpDevices = devices;
   if (!devices.empty()) {
-    const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA};
 
-    std::cout << "=== current stream id in OwnerRRef ctor " << int(guard.getStream(devices[0]).id())
+
+    std::cout << "=== current stream id in OwnerRRef ctor " << devices.size()
+              << ", stream " << int(guard.getStream(devices[0]).id())
               << std::endl << std::flush;
   }
   future_ = c10::make_intrusive<JitFuture>(
@@ -269,6 +272,15 @@ OwnerRRef::OwnerRRef(
   if (value.has_value()) {
     future_->markCompleted(value.value());
   }
+
+  for (auto& device : tmpDevices) {
+    c10::Event event{device.type()};
+    event.record(guard.getStream(device));
+    events_.push_back(std::move(event));
+    std::cout << "== OwnerRRef record stream " << int(guard.getStream(tmpDevices[0]).id())
+              << ", on device " << device << std::endl << std::flush;
+  }
+
 }
 
 const IValue& OwnerRRef::getValue() const {
@@ -316,6 +328,8 @@ void OwnerRRef::recordAllStreams(
 void OwnerRRef::blockAllStreams(std::shared_ptr<LazyStreamContext>& ctx) {
   if (ctx) {
     for (c10::Event& event : events_) {
+      std::cout << "=== blocking stream " << ctx->getStream(event.device())
+                << " on device " << event.device() << std::endl << std::flush;
       event.block(ctx->getStream(event.device()));
     }
   }

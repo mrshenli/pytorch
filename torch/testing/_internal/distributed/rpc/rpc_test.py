@@ -4656,7 +4656,10 @@ class WrapperModule(nn.Module):
     def forward(self, x):
         if self.is_rref:
             self.last_rref = x
+            owner = x.owner()
+            print(f"========== {rpc.get_worker_info().name}fetch from {owner}")
             x = x.to_here()
+            print(f"========== {rpc.get_worker_info().name} done fetch from {owner}")
             torch.cuda.synchronize(self.device)
         out = self.model(x)
         #torch.cuda.synchronize(self.device)
@@ -5911,6 +5914,7 @@ class TensorPipeAgentCudaRpcTest(RpcAgentTestFixture):
                 # remote iteration
                 with dist_autograd.context() as context_id:
                     output_rrefs = []
+                    #torch.cuda.current_stream(0).synchronize()
                     x_splits = x.split(500)
                     print("=== current stream ", rpc.api._current_stream_id(torch.device("cuda:0")))
                     #torch.cuda.current_stream(0).synchronize()

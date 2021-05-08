@@ -272,13 +272,17 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
     RpcCommandBase& rpc,
     const std::function<void(Message)>& markComplete,
     const int64_t messageId,
-    const c10::intrusive_ptr<JitFuture>& responseFuture) const {
+    const c10::intrusive_ptr<JitFuture>& responseFuture,
+    std::shared_ptr<LazyStreamContext> lsctx) const {
+  std::cout << "got ScriptFetchCall\n" << std::flush;
   auto& srf = static_cast<ScriptRRefFetchCall&>(rpc);
   auto& ctx = RRefContext::getInstance();
 
   auto futureOwner = ctx.getOwnerRRef(srf.rrefId());
 
   if (futureOwner->completed()) { // optional fast-path
+    c10::MultiStreamGuard guard(
+        lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
     // the OwnerRRef has been created
     const auto& rref = fromRRefInterface(futureOwner->constValue().toRRef());
     if (rref->hasValue()) {
@@ -287,19 +291,27 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
     }
   }
 
-  futureOwner->addCallback([responseFuture, messageId](JitFuture& futureOwner) {
+  futureOwner->addCallback([
+      responseFuture,
+      messageId,
+      lsctx{std::move(lsctx)}](JitFuture& futureOwner) {
     const auto& rref = fromRRefInterface(futureOwner.constValue().toRRef());
     auto whenValueSet = rref->getFuture();
 
     // Our response is satisfied when the rpc.remote() request
     // finishes executing on the owner.
-    whenValueSet->addCallback(
-        [responseFuture, messageId, rref](JitFuture& whenValueSet) {
+    whenValueSet->addCallback([
+        responseFuture,
+        messageId,
+        rref,
+        lsctx{std::move(lsctx)}](JitFuture& whenValueSet) {
           if (whenValueSet.hasError()) {
             responseFuture->setError(whenValueSet.exception_ptr());
             return;
           }
           try {
+            c10::MultiStreamGuard guard(
+                lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
             Message m = ScriptRRefFetchRet({rref->getValue()}).toMessage();
             m.setId(messageId);
             responseFuture->markCompleted(
@@ -588,6 +600,13 @@ void RequestCallbackNoPython::processRpc(
     responseFuture->markCompleted(
         IValue(c10::make_intrusive<Message>(std::move(m))));
   };
+
+  if (RpcAgent::getCurrentRpcAgent()->getWorkerInfo().id_ == 0) {
+      std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_
+        << " got message " << int(messageType) << std::endl << std::flush;
+
+  }
+
   // TODO: RpcCommandBase should have an abstract execute() method that we can
   // call here instead of having another switch statement here. Even better we
   // could have abstract classes RpcRequest and RpcResp which inherit from
@@ -613,10 +632,12 @@ void RequestCallbackNoPython::processRpc(
       return;
     }
     case MessageType::SCRIPT_RREF_FETCH_CALL: {
-      processScriptRRefFetchCall(rpc, markComplete, messageId, responseFuture);
+      processScriptRRefFetchCall(
+          rpc, markComplete, messageId, responseFuture, std::move(ctx));
       return;
     }
     case MessageType::PYTHON_RREF_FETCH_CALL: {
+      std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_ << " got fetch message\n" << std::flush;
       processPythonRRefFetchCall(
           rpc, messageId, responseFuture, std::move(ctx));
       return;

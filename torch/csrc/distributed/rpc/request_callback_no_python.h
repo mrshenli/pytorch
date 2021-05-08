@@ -72,7 +72,8 @@ class TORCH_API RequestCallbackNoPython : public RequestCallback {
       RpcCommandBase& rpc,
       const std::function<void(Message)>& markComplete,
       const int64_t messageId,
-      const c10::intrusive_ptr<JitFuture>& responseFuture) const;
+      const c10::intrusive_ptr<JitFuture>& responseFuture,
+      std::shared_ptr<LazyStreamContext> ctx) const;
 
   virtual void processPythonRRefFetchCall(
       RpcCommandBase& rpc,

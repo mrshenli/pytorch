@@ -389,6 +389,7 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
     const int64_t messageId,
     const c10::intrusive_ptr<JitFuture>& responseFuture,
     std::shared_ptr<LazyStreamContext> lsctx) const {
+  std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_ << " got fetch call\n" << std::flush;
   // Making this lambda mutable to allow move-capture it in callbacks
   auto postProcessing = [responseFuture, lsctx = std::move(lsctx)](
                             const c10::intrusive_ptr<OwnerRRef>& rref,
@@ -413,7 +414,9 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
       Message m =
           PythonRRefFetchRet(std::move(*result).toIValues()).toMessage();
       m.setId(messageId);
-      //rref->blockAllStreams(lsctx);
+      std::cout << "======= before RRef blockAllStreams\n" << std::flush;
+      rref->blockAllStreams(lsctx);
+      std::cout << "======= after RRef blockAllStreams\n" << std::flush;
       responseFuture->markCompleted(
           IValue(c10::make_intrusive<Message>(std::move(m))));
     } catch (py::error_already_set& e) {
