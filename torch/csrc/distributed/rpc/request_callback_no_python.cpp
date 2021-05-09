@@ -186,17 +186,24 @@ void RequestCallbackNoPython::processScriptRemoteCall(
     ScriptRemoteCall& scriptRemoteCall,
     const std::function<void(void)>& postProcessing,
     std::vector<at::IValue>& stack,
-    const c10::intrusive_ptr<OwnerRRef>& ownerRRef) const {
+    const c10::intrusive_ptr<OwnerRRef>& ownerRRef,
+    std::shared_ptr<LazyStreamContext> lsctx) const {
   TORCH_CHECK(
       scriptRemoteCall.hasOp(), "ScriptRemoteCall needs to have an op!");
-  processScriptRemoteCallOp(scriptRemoteCall, postProcessing, stack, ownerRRef);
+  processScriptRemoteCallOp(
+      scriptRemoteCall,
+      postProcessing,
+      stack,
+      ownerRRef,
+      std::move(lsctx));
 }
 
 void RequestCallbackNoPython::processBaseScriptRemoteCall(
     RpcCommandBase& rpc,
     const std::function<void(Message)>& markComplete,
     const int64_t messageId,
-    const c10::intrusive_ptr<JitFuture>& responseFuture) const {
+    const c10::intrusive_ptr<JitFuture>& responseFuture,
+    std::shared_ptr<LazyStreamContext> lsctx) const {
   auto& scriptRemoteCall = static_cast<ScriptRemoteCall&>(rpc);
   auto rrefId = scriptRemoteCall.retRRefId();
   auto forkId = scriptRemoteCall.retForkId();
@@ -237,14 +244,20 @@ void RequestCallbackNoPython::processBaseScriptRemoteCall(
   }
 
   auto& stack = scriptRemoteCall.stackRef();
-  processScriptRemoteCall(scriptRemoteCall, postProcessing, stack, ownerRRef);
+  processScriptRemoteCall(
+      scriptRemoteCall,
+      postProcessing,
+      stack,
+      ownerRRef,
+      std::move(lsctx));
 }
 
 bool RequestCallbackNoPython::processScriptRemoteCallOp(
     ScriptRemoteCall& scriptRemoteCall,
     const std::function<void(void)>& postProcessing,
     std::vector<at::IValue>& stack,
-    const c10::intrusive_ptr<OwnerRRef>& ownerRRef) const {
+    const c10::intrusive_ptr<OwnerRRef>& ownerRRef,
+    std::shared_ptr<LazyStreamContext> lsctx) const {
   if (scriptRemoteCall.hasOp()) {
     try {
       scriptRemoteCall.op()->getOperation()(&stack);
@@ -261,6 +274,8 @@ bool RequestCallbackNoPython::processScriptRemoteCallOp(
         "TorchScript function should be a single IValue, got a vector of "
         "size ",
         stack.size());
+    // TODO: remove the line below after enabling user data_ptr extractors
+    ownerRRef->recordAllStreams(lsctx);
     ownerRRef->setValue(std::move(stack.front()));
     postProcessing();
     return true;
@@ -285,7 +300,10 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
     // the OwnerRRef has been created
     const auto& rref = fromRRefInterface(futureOwner->constValue().toRRef());
     if (rref->hasValue()) {
-      markComplete(ScriptRRefFetchRet({rref->getValue()}).toMessage());
+      auto message = ScriptRRefFetchRet({rref->getValue()}).toMessage();
+      // TODO: remove the line below after enabling user data_ptr extractors
+      rref->blockAllStreams(lsctx);
+      markComplete(std::move(message));
       return;
     }
   }
@@ -312,6 +330,8 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
             c10::MultiStreamGuard guard(
                 lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
             Message m = ScriptRRefFetchRet({rref->getValue()}).toMessage();
+            // TODO: remove the line below after enabling user data_ptr extractors
+            rref->blockAllStreams(lsctx);
             m.setId(messageId);
             responseFuture->markCompleted(
                 IValue(c10::make_intrusive<Message>(std::move(m))));
@@ -616,7 +636,8 @@ void RequestCallbackNoPython::processRpc(
       return;
     }
     case MessageType::SCRIPT_REMOTE_CALL: {
-      processBaseScriptRemoteCall(rpc, markComplete, messageId, responseFuture);
+      processBaseScriptRemoteCall(
+          rpc, markComplete, messageId, responseFuture, std::move(ctx));
       return;
     }
     case MessageType::PYTHON_REMOTE_CALL: {

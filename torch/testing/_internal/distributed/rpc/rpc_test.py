@@ -4650,23 +4650,9 @@ class WrapperModule(nn.Module):
         super().__init__()
         self.model = model.to(device)
         self.is_rref = is_rref
-        #self.device = device
-        #self.last_rref = None
 
     def forward(self, x):
-        if self.is_rref:
-            #self.last_rref = x
-            #owner = x.owner()
-            #print(f"========== {rpc.get_worker_info().name}fetch from {owner}")
-            x = x.to_here()
-            #print(f"========== {rpc.get_worker_info().name} done fetch from {owner}")
-            #torch.cuda.synchronize(self.device)
-            #if rpc.get_worker_info().id == 1:
-            #    print(">>>>>>> ", x.sum())
-
-        out = self.model(x)
-        #torch.cuda.synchronize(self.device)
-        return out
+        return self.model(x.to_here() if self.is_rref else x)
 
     def gradients(self, ctx_id):
         grads = dist_autograd.get_gradients(ctx_id)

@@ -402,7 +402,6 @@ class TORCH_API OwnerRRef final : public RRef {
 
   c10::intrusive_ptr<JitFuture> future_;
 
-/*
  public:
   // Records an event per each stream in the context and stores them in
   // the current OwnerRRef instance.
@@ -413,7 +412,6 @@ class TORCH_API OwnerRRef final : public RRef {
   void blockAllStreams(std::shared_ptr<LazyStreamContext>& ctx);
 
  private:
- */
   // a storage for device events for synchronization.
   std::vector<c10::Event> events_;
 };

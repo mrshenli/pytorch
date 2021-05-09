@@ -294,7 +294,6 @@ void OwnerRRef::setError(std::exception_ptr eptr) {
   future_->setErrorIfNeeded(std::move(eptr));
 }
 
-/*
 void OwnerRRef::recordAllStreams(
     const std::shared_ptr<LazyStreamContext>& ctx) {
   if (ctx) {
@@ -313,7 +312,6 @@ void OwnerRRef::blockAllStreams(std::shared_ptr<LazyStreamContext>& ctx) {
     }
   }
 }
-*/
 
 std::ostream& operator<<(std::ostream& os, const RRef& rref) {
   if (rref.isOwner()) {

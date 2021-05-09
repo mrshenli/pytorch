@@ -257,14 +257,15 @@ void RequestCallbackImpl::processScriptRemoteCall(
     ScriptRemoteCall& scriptRemoteCall,
     const std::function<void(void)>& postProcessing,
     std::vector<at::IValue>& stack,
-    const c10::intrusive_ptr<OwnerRRef>& ownerRRef) const {
+    const c10::intrusive_ptr<OwnerRRef>& ownerRRef,
+    std::shared_ptr<LazyStreamContext> lsctx) const {
   if (processScriptRemoteCallOp(
-          scriptRemoteCall, postProcessing, stack, ownerRRef)) {
+          scriptRemoteCall, postProcessing, stack, ownerRRef, std::move(lsctx))) {
     return;
   }
 
   auto isAsyncExecution = scriptRemoteCall.isAsyncExecution();
-  auto asyncPostProcessing = [ownerRRef, postProcessing, isAsyncExecution](
+  auto asyncPostProcessing = [ownerRRef, postProcessing, isAsyncExecution, lsctx{std::move(lsctx)}](
                                  c10::ivalue::Future& jitFuture) mutable {
     // The user function will return a JIT future, install
     // setRRefValue and postProcessing to that valueFuture
@@ -274,8 +275,10 @@ void RequestCallbackImpl::processScriptRemoteCall(
 
       // Setup callback.
       auto setRRefValue = [ownerRRef,
-                           postProcessing](JitFuture& valueJitFuture) mutable {
+                           postProcessing,
+                           lsctx{std::move(lsctx)}](JitFuture& valueJitFuture) mutable {
         try {
+          ownerRRef->recordAllStreams(lsctx);
           ownerRRef->setValue(valueJitFuture.value());
         } catch (const std::exception& e) {
           ownerRRef->setError(std::current_exception());
@@ -331,10 +334,7 @@ void RequestCallbackImpl::processPythonRemoteCall(
                               ->constValue()
                               .toRRef());
   } else {
-    ownerRRef = ctx.getOrCreateOwnerRRef(
-        rrefId,
-        PyObjectType::get(),
-        lsctx ? lsctx->devicesVec() : std::vector<c10::Device>({}));
+    ownerRRef = ctx.getOrCreateOwnerRRef(rrefId, PyObjectType::get());
   }
   // NOLINTNEXTLINE(clang-diagnostic-unused-variable)
   auto& pythonRpcHandler = PythonRpcHandler::getInstance();
@@ -370,7 +370,8 @@ void RequestCallbackImpl::processPythonRemoteCall(
           py::gil_scoped_release release;
           c10::MultiStreamGuard guard(
               lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
-          //ownerRRef->recordAllStreams(lsctx);
+          // TODO: remove the line below after enabling user data_ptr extractors
+          ownerRRef->recordAllStreams(lsctx);
           ownerRRef->setValue(std::move(py_ivalue));
           auto m = RemoteRet(rrefId, forkId).toMessage();
           m.setId(messageId);
@@ -418,7 +419,7 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
       Message m =
           PythonRRefFetchRet(std::move(*result).toIValues()).toMessage();
       m.setId(messageId);
-      //rref->blockAllStreams(lsctx);
+      rref->blockAllStreams(lsctx);
       responseFuture->markCompleted(
           IValue(c10::make_intrusive<Message>(std::move(m))));
     } catch (py::error_already_set& e) {
