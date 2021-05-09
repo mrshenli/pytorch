@@ -858,14 +858,6 @@ PyObject* rpc_init(PyObject* _unused, PyObject* noargs) {
       )");
 
   module.def(
-      "_current_stream_id",
-      [](c10::Device device){
-        const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA};
-        return int(guard.getStream(device).id());
-      }
-  );
-
-  module.def(
       "enable_gil_profiling",
       [](bool flag) {
         RpcAgent::getCurrentRpcAgent()->enableGILProfiling(flag);

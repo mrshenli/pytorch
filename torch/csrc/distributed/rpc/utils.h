@@ -146,6 +146,15 @@ struct TORCH_API LazyStreamContext {
     return devices;
   }
 
+  // TODO: consolidate two devices API
+  std::vector<c10::Device> devicesVec() const {
+    std::vector<c10::Device> devices;
+    for (const auto& entry : streams_) {
+      devices.push_back(entry.first);
+    }
+    return devices;
+  }
+
   c10::DeviceType deviceType() const {
     return impl_.type();
   }

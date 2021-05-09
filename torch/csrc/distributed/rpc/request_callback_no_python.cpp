@@ -274,7 +274,6 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
     const int64_t messageId,
     const c10::intrusive_ptr<JitFuture>& responseFuture,
     std::shared_ptr<LazyStreamContext> lsctx) const {
-  std::cout << "got ScriptFetchCall\n" << std::flush;
   auto& srf = static_cast<ScriptRRefFetchCall&>(rpc);
   auto& ctx = RRefContext::getInstance();
 
@@ -304,7 +303,7 @@ void RequestCallbackNoPython::processScriptRRefFetchCall(
         responseFuture,
         messageId,
         rref,
-        lsctx{std::move(lsctx)}](JitFuture& whenValueSet) {
+        lsctx{std::move(lsctx)}](JitFuture& whenValueSet) mutable {
           if (whenValueSet.hasError()) {
             responseFuture->setError(whenValueSet.exception_ptr());
             return;
@@ -601,12 +600,6 @@ void RequestCallbackNoPython::processRpc(
         IValue(c10::make_intrusive<Message>(std::move(m))));
   };
 
-  if (RpcAgent::getCurrentRpcAgent()->getWorkerInfo().id_ == 0) {
-      std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_
-        << " got message " << int(messageType) << std::endl << std::flush;
-
-  }
-
   // TODO: RpcCommandBase should have an abstract execute() method that we can
   // call here instead of having another switch statement here. Even better we
   // could have abstract classes RpcRequest and RpcResp which inherit from
@@ -637,7 +630,6 @@ void RequestCallbackNoPython::processRpc(
       return;
     }
     case MessageType::PYTHON_RREF_FETCH_CALL: {
-      std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_ << " got fetch message\n" << std::flush;
       processPythonRRefFetchCall(
           rpc, messageId, responseFuture, std::move(ctx));
       return;

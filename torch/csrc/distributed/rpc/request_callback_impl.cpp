@@ -331,7 +331,10 @@ void RequestCallbackImpl::processPythonRemoteCall(
                               ->constValue()
                               .toRRef());
   } else {
-    ownerRRef = ctx.getOrCreateOwnerRRef(rrefId, PyObjectType::get());
+    ownerRRef = ctx.getOrCreateOwnerRRef(
+        rrefId,
+        PyObjectType::get(),
+        lsctx ? lsctx->devicesVec() : std::vector<c10::Device>({}));
   }
   // NOLINTNEXTLINE(clang-diagnostic-unused-variable)
   auto& pythonRpcHandler = PythonRpcHandler::getInstance();
@@ -365,7 +368,9 @@ void RequestCallbackImpl::processPythonRemoteCall(
           IValue py_ivalue = jit::toIValue(result, PyObjectType::get());
 
           py::gil_scoped_release release;
-          ownerRRef->recordAllStreams(lsctx);
+          c10::MultiStreamGuard guard(
+              lsctx ? lsctx->getReservedStreams() : ArrayRef<Stream>({}));
+          //ownerRRef->recordAllStreams(lsctx);
           ownerRRef->setValue(std::move(py_ivalue));
           auto m = RemoteRet(rrefId, forkId).toMessage();
           m.setId(messageId);
@@ -389,7 +394,6 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
     const int64_t messageId,
     const c10::intrusive_ptr<JitFuture>& responseFuture,
     std::shared_ptr<LazyStreamContext> lsctx) const {
-  std::cout << RpcAgent::getCurrentRpcAgent()->getWorkerInfo().name_ << " got fetch call\n" << std::flush;
   // Making this lambda mutable to allow move-capture it in callbacks
   auto postProcessing = [responseFuture, lsctx = std::move(lsctx)](
                             const c10::intrusive_ptr<OwnerRRef>& rref,
@@ -414,9 +418,7 @@ void RequestCallbackImpl::processPythonRRefFetchCall(
       Message m =
           PythonRRefFetchRet(std::move(*result).toIValues()).toMessage();
       m.setId(messageId);
-      std::cout << "======= before RRef blockAllStreams\n" << std::flush;
-      rref->blockAllStreams(lsctx);
-      std::cout << "======= after RRef blockAllStreams\n" << std::flush;
+      //rref->blockAllStreams(lsctx);
       responseFuture->markCompleted(
           IValue(c10::make_intrusive<Message>(std::move(m))));
     } catch (py::error_already_set& e) {

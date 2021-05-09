@@ -4650,17 +4650,20 @@ class WrapperModule(nn.Module):
         super().__init__()
         self.model = model.to(device)
         self.is_rref = is_rref
-        self.device = device
-        self.last_rref = None
+        #self.device = device
+        #self.last_rref = None
 
     def forward(self, x):
         if self.is_rref:
-            self.last_rref = x
-            owner = x.owner()
-            print(f"========== {rpc.get_worker_info().name}fetch from {owner}")
+            #self.last_rref = x
+            #owner = x.owner()
+            #print(f"========== {rpc.get_worker_info().name}fetch from {owner}")
             x = x.to_here()
-            print(f"========== {rpc.get_worker_info().name} done fetch from {owner}")
-            torch.cuda.synchronize(self.device)
+            #print(f"========== {rpc.get_worker_info().name} done fetch from {owner}")
+            #torch.cuda.synchronize(self.device)
+            #if rpc.get_worker_info().id == 1:
+            #    print(">>>>>>> ", x.sum())
+
         out = self.model(x)
         #torch.cuda.synchronize(self.device)
         return out
@@ -5895,7 +5898,7 @@ class TensorPipeAgentCudaRpcTest(RpcAgentTestFixture):
 
         if self.rank == 0:
             # this is master
-            layers = [nn.Linear(2000, 2000) for _ in range(self.world_size - 1)]
+            layers = [nn.Linear(200, 200) for _ in range(self.world_size - 1)]
             local_layers = [l.to(0) for l in layers]
             remote_layers = []
             for rank in range(1, self.world_size):
@@ -5906,7 +5909,7 @@ class TensorPipeAgentCudaRpcTest(RpcAgentTestFixture):
                 ))
 
             for _ in range(4):
-                x = torch.randn(5000, 2000).to(0)
+                x = torch.randn(5000, 200).to(0)
                 # local iteration
                 local_model = nn.Sequential(*local_layers)
                 local_sum= local_model(x).sum()
@@ -5914,11 +5917,7 @@ class TensorPipeAgentCudaRpcTest(RpcAgentTestFixture):
                 # remote iteration
                 with dist_autograd.context() as context_id:
                     output_rrefs = []
-                    #torch.cuda.current_stream(0).synchronize()
-                    x_splits = x.split(500)
-                    print("=== current stream ", rpc.api._current_stream_id(torch.device("cuda:0")))
-                    #torch.cuda.current_stream(0).synchronize()
-                    for xx in x_splits:
+                    for xx in x.split(500):
                         rref_xx = RRef(xx, devices=[torch.device("cuda:0")])
                         for remote_layer in remote_layers:
                             rref_xx = remote_layer.remote().forward(rref_xx)
