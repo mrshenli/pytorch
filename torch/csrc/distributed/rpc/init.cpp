@@ -1,5 +1,8 @@
 #include <torch/csrc/python_headers.h>
 
+#include <torch/csrc/distributed/rpc/ps.h>
+
+
 #include <torch/csrc/distributed/rpc/process_group_agent.h>
 #include <torch/csrc/distributed/rpc/profiler/remote_profiler_manager.h>
 #include <torch/csrc/distributed/rpc/profiler/server_process_global_profiler.h>
