@@ -608,6 +608,21 @@ PyObject* rpc_init(PyObject* _unused, PyObject* noargs) {
           &ProcessGroupAgent::sync,
           py::call_guard<py::gil_scoped_release>());
 
+  shared_ptr_class_<ParameterServer>(module, "ParameterServer")
+      .def(
+          py::init<int32_t, int32_t>(),
+          py::arg("num_trainers"),
+          py::arg("num_buckets"))
+      .def(
+          "add_grad_bucket",
+          [](ParameterServer& self, at::Tensor bucket, int16_t id) {
+            return std::make_shared<jit::PythonFutureWrapper>(
+                self.addGradBucket(std::move(bucket), id));
+          }
+      );
+
+
+
 #ifdef USE_TENSORPIPE
 
   // Base class: torch.distributed.rpc.RpcBackendOptions.
