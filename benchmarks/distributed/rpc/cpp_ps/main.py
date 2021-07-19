@@ -4,6 +4,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+import argparse
 import os
 import time
 
@@ -12,30 +13,27 @@ N_BUCKETS = 10
 N_FEATURES = 1024
 BATCH_SIZE = 64
 
+parser = argparse.ArgumentParser(description='C++ PS Demo')
+parser.add_argument('--world_size', type=int, default=3)
+parser.add_argument('--use_rpc', action="store_true", default=False)
+
+args = parser.parse_args()
+
+
 @rpc.functions.async_execution
 def average_gradients(ps_rref, bucket, bucket_id):
-    def func(fut):
-        print(f"grad {bucket_id} is ready", flush=True)
-        return fut.wait()
-
-    return ps_rref.local_value().add_grad_bucket(bucket, bucket_id).then(func)
+    return ps_rref.local_value().add_grad_bucket(bucket, bucket_id)
 
 
 def ps_hook(ps_rref, bucket):
     bucket_tensor = bucket.get_tensor()
     bucket_id = bucket.get_index()
 
-    print(f"in bucket {bucket_id}", flush=True)
-
-    def func(fut):
-        print(f"bucket {bucket_id} is ready", flush=True)
-        return [fut.wait()]
-
     return rpc.rpc_async(
         ps_rref.owner(),
         average_gradients,
         args=(ps_rref, bucket_tensor, bucket_id)
-    ).then(func)  # DDP hook expects a list of tensors
+    ).then(lambda fut: [fut.wait()])  # DDP hook expects a list of tensors
 
 
 class PyParameterServer(rpc.ParameterServer):
@@ -61,19 +59,20 @@ class Trainer:
     def run(self):
         inputs = torch.zeros(BATCH_SIZE, N_FEATURES).cuda(0)
         # warmup
-        for _ in range(20):
+        for _ in range(40):
             self.ddp(inputs).sum().backward()
 
         # measure
-        torch.cuda.current_stream(0).synchronize()
-        tik = time.time()
-        for _ in range(20):
+        delays = []
+        for _ in range(40):
+            torch.cuda.current_stream(0).synchronize()
+            tik = time.time()
             self.ddp(inputs).sum().backward()
+            torch.cuda.current_stream(0).synchronize()
+            tok = time.time()
+            delays.append(tok - tik)
 
-        torch.cuda.current_stream(0).synchronize()
-        tok = time.time()
-
-        print(f"{rpc.get_worker_info().name} delay: {tok - tik}")
+        print(f"{rpc.get_worker_info().name} delay: {1000 * sum(delays) / len(delays)}")
 
 
 def run(rank, world_size, num_gpu_per_node=8):
@@ -105,30 +104,22 @@ def run(rank, world_size, num_gpu_per_node=8):
 
     rpc.api._barrier([f"worker{r}" for r in range(world_size)])
 
-    print(f"worker{rank} initialized")
-
     if rank == 0:
-        print("00000")
+        print(f"{args.world_size - 1} trainers, using {'RPC' if args.use_rpc else 'NCCL'}")
         ps = PyParameterServer(world_size - 1, N_BUCKETS)
-        print("01010")
         ps_rref = rpc.RRef(ps)
 
-        print("11111")
+        hook = ps_hook if args.use_rpc else None
         trainers = [
-            #rpc.remote(f"worker{i}", Trainer, args=(ps_rref, ps_hook))
-            rpc.remote(f"worker{i}", Trainer, args=(ps_rref, ))
+            rpc.remote(f"worker{i}", Trainer, args=(ps_rref, hook))
             for i in range(1, world_size)
         ]
-        print("22222")
 
         futs = [trainer.rpc_async().run() for trainer in trainers]
-        print("33333")
         torch.futures.wait_all(futs)
 
-    print(f"worker{rank} reached shutdown")
     rpc.shutdown()
 
 
 if __name__=="__main__":
-    world_size = 8
-    mp.spawn(run, args=(world_size,), nprocs=world_size, join=True)
+    mp.spawn(run, args=(args.world_size,), nprocs=args.world_size, join=True)
