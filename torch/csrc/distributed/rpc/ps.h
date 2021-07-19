@@ -55,11 +55,10 @@ class TORCH_API ParameterServer final {
     futures_.reserve(num_buckets);
     buckets_.reserve(num_buckets);
     pendingTrainers_ = std::vector<int16_t>(num_buckets, num_trainers);
-    for (int i = 0; i < num_trainers_; ++i) {
+    for (int i = 0; i < num_buckets; ++i) {
       futures_.emplace_back(c10::make_intrusive<JitFuture>(TensorType::get()));
       buckets_.emplace_back(torch::zeros({0}));
     }
-
 
     thread_ = std::thread(&ParameterServer::accumulateGradBuckets, this);
   }
@@ -78,7 +77,8 @@ class TORCH_API ParameterServer final {
       auto& bucket = gradBucket.bucket;
       c10::cuda::CUDACachingAllocator::recordStream(
           bucket.storage().data_ptr(), stream);
-      if (buckets_[id].numel() != bucket.numel()) {
+
+      if (pendingTrainers_[id] == num_trainers_){
         buckets_[id] = bucket;
       } else {
         buckets_[id] += bucket;
@@ -86,9 +86,8 @@ class TORCH_API ParameterServer final {
 
       if (--pendingTrainers_[id] <= 0) {
         futures_[id]->markCompleted(buckets_[id]);
-        buckets_[id] = torch::zeros({0});
         futures_[id] = c10::make_intrusive<JitFuture>(TensorType::get());
-        --pendingTrainers_[id] = num_trainers_;
+        pendingTrainers_[id] = num_trainers_;
       }
     }
 
